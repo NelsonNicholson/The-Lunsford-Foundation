@@ -87,7 +87,7 @@ $('#lockBtn').addEventListener('click', () => { LS.del('tlf_pp'); location.hash 
 /* =========================================================
    Data model
    ========================================================= */
-const S = { bTab: 'Core', orgTab: 'Core', histRange: 'all', histMetric: 'amount', histCat: null, orgSearch: '', orgCat: '', orgGrp: '', orgSort: { k: 'total', d: -1 } };
+const S = { bTab: 'All', orgTab: 'Core', histRange: 'all', histMetric: 'amount', histCat: null, orgSearch: '', orgCat: '', orgGrp: '', orgSort: { k: 'total', d: -1 } };
 let D = null;       // raw data
 let M = null;       // derived model
 
@@ -938,6 +938,7 @@ function modal({ title, body, buttons }) {
    ========================================================= */
 function viewBudget(el) {
   const B = loadDraft();
+  S.bTab = 'All';
   const openRows = new Set();
   let showRemoved = false;
   const hist = o => { const x = M.orgs[o]; return x ? [x.byYear[2024] || 0, x.byYear[2025] || 0, x.byYear[2026] || 0] : [0, 0, 0]; };
@@ -972,13 +973,15 @@ function viewBudget(el) {
     </div>
   </div>
   <div class="btools">
-    <div class="seg" id="bTabs"></div>
+    <div></div>
     <div class="toolbar">
       <button class="btn" id="bFill" title="Fill every blank 2027 Target with that organization's 2026 Target">Start from 2026 targets</button>
       <button class="btn btn-primary" id="bAdd">+ Add Organization</button>
     </div>
   </div>
   <div class="card flush" id="bListCard">
+    <div class="btabs-wrap"><span class="btabs-label">View</span><div class="btabs" id="bTabs" role="tablist" aria-label="Budget views"></div></div>
+    <div class="btab-desc" id="bTabDesc"></div>
     <div class="bhead"><span>Organization</span><span>Giving 2024 · 2025 · 2026 YTD</span><span class="r">2026 Target</span><span class="r">2027 Target</span><span></span></div>
     <div id="bList"></div>
     <div class="bfoot" id="bFoot"></div>
@@ -1017,15 +1020,19 @@ function viewBudget(el) {
   const tabDefs = () => {
     const inc = B.rows.filter(r => r.inc);
     return [
+      ['All', 'All Organizations', inc],
       ['Core', 'Core Giving', inc.filter(r => r.grp === 'Core' && !r.isNew)],
       ['Other', 'The "Bucket"', inc.filter(r => r.grp !== 'Core' && !r.isNew)],
       ['New', 'New Organizations', inc.filter(r => r.isNew)],
-      ['Unpaid', 'Unpaid 2026', inc.filter(r => canMove(r.o))],
-      ['All', 'All', inc]
+      ['Unpaid', 'Unpaid 2026', inc.filter(r => canMove(r.o))]
     ];
   };
   const drawTabs = () => {
-    $('#bTabs').innerHTML = tabDefs().map(([k, l, L]) => `<button data-k="${k}" class="${S.bTab === k ? 'on' : ''}">${l} <span class="cnt">${L.length}</span></button>`).join('');
+    const DESC = { All: 'Every organization in the 2027 budget.', Core: 'Core Giving organizations.', Other: 'The "Bucket" — other giving outside the core plan.', New: 'Organizations you have added that have no giving history.', Unpaid: '2026 targets not yet paid — use “Move to 2027?” to defer them.' };
+    const MV = MVnow();
+    $('#bTabs').innerHTML = tabDefs().map(([k, l, L]) => `<button role="tab" aria-selected="${S.bTab === k}" data-k="${k}" class="btab ${S.bTab === k ? 'on' : ''}">${k === 'Unpaid' && L.some(r => !MV.has(r.o)) ? '<span class="btab-dot" title="Needs a decision"></span>' : ''}${l}<span class="cnt">${L.length}</span></button>`).join('');
+    const cur = tabDefs().find(t => t[0] === S.bTab) || tabDefs()[0];
+    $('#bTabDesc').innerHTML = `Showing <b>${cur[2].length}</b> ${cur[2].length === 1 ? 'organization' : 'organizations'} · ${DESC[cur[0]]}`;
     $$('#bTabs button').forEach(b => b.addEventListener('click', () => { S.bTab = b.dataset.k; drawAll(); }));
   };
 

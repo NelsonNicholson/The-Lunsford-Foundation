@@ -377,3 +377,18 @@ textarea.notes{width:100%;min-height:110px;padding:12px;border:1px solid var(--l
   .bk{min-width:0;flex:1 1 30%}
   .bfoot{gap:14px}
 }
+
+/* Budget view tabs (prominent) */
+.btools-hint{font-size:12.5px;color:var(--muted)}
+.btabs-wrap{display:flex;align-items:stretch;gap:14px;padding:0 20px;border-bottom:1px solid var(--line);background:var(--surface-2);border-radius:var(--radius) var(--radius) 0 0;overflow-x:auto;scrollbar-width:thin}
+.btabs-label{align-self:center;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);font-weight:700;white-space:nowrap}
+.btabs{display:flex;gap:2px}
+.btab{position:relative;display:inline-flex;align-items:center;gap:8px;border:0;background:transparent;padding:15px 16px 13px;font-size:14.5px;font-weight:500;color:var(--ink-2);cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;margin-bottom:-1px;transition:color .12s,background .12s,border-color .12s}
+.btab:hover{color:var(--navy);background:rgba(155,131,93,.08)}
+.btab.on{color:var(--navy);font-weight:600;border-bottom-color:var(--gold);background:var(--surface)}
+.btab .cnt{display:inline-block;min-width:22px;padding:1px 7px;border-radius:10px;background:var(--line-2);color:var(--ink-2);font-size:12px;font-weight:600;text-align:center}
+.btab.on .cnt{background:var(--navy);color:#fff}
+.btab-dot{width:7px;height:7px;border-radius:50%;background:var(--warn);display:inline-block}
+.btab-desc{padding:10px 20px;font-size:12.5px;color:var(--ink-2);border-bottom:1px solid var(--line-2);background:var(--surface)}
+.btab-desc b{color:var(--navy)}
+@media (max-width:820px){ .btabs-wrap{padding:0 10px} .btab{padding:13px 12px 11px;font-size:13.5px} .btools-hint{display:none} }
