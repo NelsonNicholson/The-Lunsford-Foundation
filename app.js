@@ -39,6 +39,7 @@ const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
 const ymLabel = m => MONTHS[+m.slice(5, 7) - 1] + ' ' + m.slice(0, 4);
 const catDot = c => `<span class="dot" style="background:${CAT_COLOR[c] || MUTED}"></span>`;
 const catChip = c => `<span class="chip">${catDot(c)}${esc(c || '—')}</span>`;
+const srcLabel = s => ({ HLH: 'Holt Lunsford Holdings', HLC: 'Holt Lunsford Commercial' }[s] || s);
 const grpLabel = g => g === 'Core' ? 'Core Giving' : 'The Bucket';
 const sum = (arr, f = x => x) => arr.reduce((s, x) => s + (f(x) || 0), 0);
 function toast(msg) {
@@ -590,19 +591,25 @@ function viewHistory(el) {
   drawTop();
 
   // Source accounts (2023+)
-  const SRC = ['The Signatry', 'The Lunsford Foundation', 'Personal', 'HLH'];
-  const SRC_COLOR = { 'The Signatry': NAVY, 'The Lunsford Foundation': GOLD, 'Personal': '#5B8C9E', 'HLH': '#B9AE9B', 'Not tracked': '#DDD8CF' };
+  const SRC = ['The Signatry', 'The Lunsford Foundation', 'Personal', 'HLH', 'HLC'];
+  const SRC_COLOR = { 'The Signatry': NAVY, 'The Lunsford Foundation': GOLD, 'Personal': '#5B8C9E', 'HLH': '#B9AE9B', 'HLC': '#7E6A8F', 'Not tracked': '#DDD8CF' };
   const syrs = YEARS.filter(y => y >= Math.max(2023, y0) && y <= y1);
   $('#srcCard').innerHTML = `
     <div class="sec-head"><div><h2 class="sec">Gifts by Source Account</h2><div class="sec-sub">Which account each gift was paid from · tracked from 2023 forward</div></div></div>
-    ${syrs.length ? legendHTML([...SRC, 'Not tracked'].map(s => ({ label: s === 'HLH' ? 'Holt Lunsford Holdings' : s, color: SRC_COLOR[s] }))) + '<div class="chart-box"><canvas></canvas></div>' : '<p class="sec-sub">Source accounts are tracked from 2023 forward — choose a range that includes 2023–2026.</p>'}`;
+    ${syrs.length ? legendHTML([...SRC, 'Not tracked'].map(s => ({ label: srcLabel(s), color: SRC_COLOR[s] }))) + '<div class="chart-box"><canvas></canvas></div>' : '<p class="sec-sub">Source accounts are tracked from 2023 forward — choose a range that includes 2023–2026.</p>'}`;
   if (syrs.length) {
     const srcOf = g => SRC.includes(g.s) ? g.s : 'Not tracked';
     mkChart($('#srcCard canvas'), {
       type: 'bar',
-      data: { labels: syrs.map(y => y === CY ? 'YTD ' + y : String(y)), datasets: [...SRC, 'Not tracked'].map(s => ({ label: s === 'HLH' ? 'Holt Lunsford Holdings' : s, data: syrs.map(y => sum(D.gifts.filter(g => g.y === y && srcOf(g) === s), g => g.a)), backgroundColor: SRC_COLOR[s], borderColor: '#fff', borderWidth: { top: 2 }, borderSkipped: 'bottom', maxBarThickness: 56 })) },
+      data: { labels: syrs.map(y => y === CY ? 'YTD ' + y : String(y)), datasets: [...SRC, 'Not tracked'].map(s => ({ label: srcLabel(s), data: syrs.map(y => sum(D.gifts.filter(g => g.y === y && srcOf(g) === s), g => g.a)), backgroundColor: SRC_COLOR[s], borderColor: '#fff', borderWidth: { top: 2 }, borderSkipped: 'bottom', maxBarThickness: 56 })) },
       options: { maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: tooltipCfg({ mode: 'index', intersect: false, filter: i => i.parsed.y > 0 }) }, scales: { x: catAxis({ stacked: true }), y: moneyAxis({ stacked: true }) } }
     });
+    const val = (y, s) => sum(D.gifts.filter(g => g.y === y && srcOf(g) === s), g => g.a);
+    const used = [...SRC, 'Not tracked'].filter(s => syrs.some(y => val(y, s)));
+    $('#srcCard').insertAdjacentHTML('beforeend', `<div class="tbl-wrap mt"><table class="tbl" style="font-size:12.5px">
+      <thead><tr><th>Account</th>${syrs.map(y => `<th class="n">${y === CY ? 'YTD ' + y : y}</th>`).join('')}</tr></thead>
+      <tbody>${used.map(s => `<tr><td><span class="chip" style="color:var(--ink)"><span class="swatch" style="width:10px;height:10px;border-radius:2px;display:inline-block;background:${SRC_COLOR[s]}"></span>${esc(srcLabel(s))}</span></td>${syrs.map(y => `<td class="n">${fmtZ(val(y, s))}</td>`).join('')}</tr>`).join('')}</tbody>
+      <tfoot><tr><td>Total</td>${syrs.map(y => `<td class="n">${fmt(sum(D.gifts.filter(g => g.y === y), g => g.a))}</td>`).join('')}</tr></tfoot></table></div>`);
   }
 }
 
@@ -744,7 +751,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(
 function openOrg(name) {
   const o = M.orgs[name]; if (!o) return;
   const state = { year: 'all' };
-  const srcNice = s => s === 'HLH' ? 'Holt Lunsford Holdings' : s;
+  const srcNice = srcLabel;
   const srcTot = {}; o.gifts.forEach(g => srcTot[g.s] = (srcTot[g.s] || 0) + g.a);
   const c = o.commit;
   const act26 = o.byYear[CY] || 0;
