@@ -87,7 +87,7 @@ $('#lockBtn').addEventListener('click', () => { LS.del('tlf_pp'); location.hash 
 /* =========================================================
    Data model
    ========================================================= */
-const S = { includeTCA: true, orgTab: 'Core', histRange: 'all', histMetric: 'amount', histCat: null, orgSearch: '', orgCat: '', orgGrp: '', orgSort: { k: 'total', d: -1 } };
+const S = { bTab: 'Core', orgTab: 'Core', histRange: 'all', histMetric: 'amount', histCat: null, orgSearch: '', orgCat: '', orgGrp: '', orgSort: { k: 'total', d: -1 } };
 let D = null;       // raw data
 let M = null;       // derived model
 
@@ -121,12 +121,13 @@ function derive(d) {
 /* 2026 tracking rows */
 function currentRows() {
   const rows = [];
+  const MV = movedSet();
   M.list.forEach(o => {
     const act = o.byYear[CY] || 0, tgt = o.target || 0;
     if (!tgt && !act) return;
     const grp = tgt ? o.tgrp : 'Other';           // anything outside the target list rolls into The Bucket
     let remaining = tgt ? Math.max(0, tgt - act) : 0;
-    const deferred = (!S.includeTCA && o.name === 'Trinity Christian Academy') ? remaining : 0;
+    const deferred = MV.has(o.name) ? remaining : 0;
     let status;
     if (!tgt) status = { t: 'Unbudgeted', c: 'muted' };
     else if (act >= tgt) status = { t: 'Completed', c: 'good' };
@@ -272,10 +273,18 @@ function renderFunds(el, rows, funds, remaining) {
   const bal = D.balances;
   const balColors = [NAVY, GOLD];
   const remColors = ['#7A5A3A', '#A98457', '#C7B08C'];
+  const deferred = rows.filter(r => r.deferred);
+  // 2027 outlook from the budget draft
+  const MV = movedSet();
+  const B = loadDraft();
+  const inc = B.rows.filter(r => r.inc);
+  const has27 = inc.some(r => r.amt);
+  const t27 = has27 ? sum(inc, r => r.amt || 0) : sum(inc, r => nextCommit(r.o, MV));
+  const carry = Math.max(0, gap);
+  const need27 = Math.max(0, t27 - carry);
   el.innerHTML = `
     <div class="sec-head">
       <div><h2 class="sec">Funds Available vs. Remaining to Give</h2><div class="sec-sub">Current giving account balances compared with open 2026 targets</div></div>
-      <label class="toggle"><input type="checkbox" id="tcaToggle" ${S.includeTCA ? 'checked' : ''}><span class="sw"></span>Include Trinity Christian Academy $1M in 2026</label>
     </div>
     <div class="funds-row">
       <div class="lbl">Available funds<small>Giving account balances</small></div>
@@ -294,8 +303,20 @@ function renderFunds(el, rows, funds, remaining) {
     <div class="grid g-2 mt" style="gap:12px">
       ${bal.map((b, i) => `<div class="note"><span class="chip" style="color:var(--ink)"><span class="swatch" style="width:10px;height:10px;border-radius:2px;background:${balColors[i]};display:inline-block"></span><b>${esc(b.n)}</b>${b.main ? ' <span class="tag gold">Main source</span>' : ''}</span><div style="font-family:var(--serif);font-size:24px;font-weight:600;color:var(--navy);margin-top:4px">${fmt(b.a)}</div></div>`).join('')}
     </div>
-    <div class="note mt"><b>Timing notes:</b> The $1M gift to Children's Medical is anticipated soon. The $1M gift to Trinity Christian Academy may be pushed to 2027 — use the switch above to see the funding position either way.</div>`;
-  $('#tcaToggle').addEventListener('change', e => { S.includeTCA = e.target.checked; route(); });
+    <h3 class="sec mt" style="font-size:18px">Funding Outlook · 2026 → 2027</h3>
+    <div class="tbl-wrap"><table class="tbl outlook">
+      <tbody>
+        <tr><td><b>2026</b> · Available funds</td><td class="n">${fmt(funds)}</td></tr>
+        <tr><td>Less: remaining to give in 2026${deferred.length ? ` <span class="sec-sub">(after ${fmt(sum(deferred, r => r.deferred))} deferred)</span>` : ''}</td><td class="n">(${fmt(remaining)})</td></tr>
+        <tr class="sub"><td>${gap < 0 ? 'Additional funding needed for 2026' : 'Funds carried into 2027'}</td><td class="n" style="color:${gap < 0 ? 'var(--bad)' : 'var(--good)'}">${fmt(Math.abs(gap))}</td></tr>
+        <tr><td><b>2027</b> · ${has27 ? '2027 Target (from the 2027 budget draft)' : '2027 commitments <span class="sec-sub">(no 2027 budget amounts entered yet)</span>'}</td><td class="n">${fmt(t27)}</td></tr>
+        <tr><td>Less: funds carried over from 2026</td><td class="n">(${fmt(carry)})</td></tr>
+        <tr class="sub"><td>Additional funding needed for 2027</td><td class="n" style="color:${need27 > 0 ? 'var(--bad)' : 'var(--good)'}">${fmt(need27)}</td></tr>
+      </tbody>
+    </table></div>
+    <div class="note mt">${deferred.length
+      ? `<b>Deferred to 2027:</b> ${deferred.map(r => `${esc(r.name)} ${fmt(r.deferred)}`).join(' · ')}. These are excluded from 2026 remaining to give and included in 2027. <a href="#/budget">Manage in the 2027 Budget →</a>`
+      : `<b>Timing notes:</b> The $1M gift to Children's Medical is anticipated soon. Gifts that slip to next year (for example Trinity Christian Academy) can be moved with <b>Move to 2027?</b> in the <a href="#/budget">2027 Budget</a> — they will then show here as deferred.`}</div>`;
   bindTips(el);
 }
 
@@ -330,7 +351,8 @@ function renderOrgTable(el, rows) {
     const tab = S.orgTab;
     let rs = rows.filter(r => tab === 'All' || r.grp === tab);
     rs.sort((a, b) => (b.tgt - a.tgt) || (b.act - a.act));
-    const open = rs.filter(r => r.status.t !== 'Completed' && r.status.t !== 'Unbudgeted');
+    const open = rs.filter(r => !['Completed', 'Unbudgeted', 'Deferred to 2027'].includes(r.status.t));
+    const defer = rs.filter(r => r.status.t === 'Deferred to 2027');
     const done = rs.filter(r => r.status.t === 'Completed');
     const unb = rs.filter(r => r.status.t === 'Unbudgeted');
     const rowHTML = r => {
@@ -361,6 +383,7 @@ function renderOrgTable(el, rows) {
         <thead><tr><th>Organization</th><th class="n">2025 Giving</th><th class="n">2026 Target</th><th class="n">2026 Actual</th><th class="n">Remaining</th><th>Progress</th><th>Status</th></tr></thead>
         <tbody>
           ${sub('Open targets', open)}
+          ${sub('Deferred to 2027', defer)}
           ${sub('Completed', done)}
           ${sub('Unbudgeted gifts', unb)}
         </tbody>
@@ -434,7 +457,7 @@ function commitPaid(c, y) {
   return sum(D.gifts.filter(g => g.o === c.o && g.y === y), g => g.a);
 }
 function renderCommitments(el) {
-  const yrs = [2025, 2026, 2027, 2028, 2029];
+  const MV = movedSet();
   const rows = D.commitments.map(c => {
     const paid = sum(c.sched, s => s[0] <= CY ? Math.min(s[1], commitPaid(c, s[0])) : 0);
     return { c, paid, rem: c.total - paid };
@@ -445,8 +468,8 @@ function renderCommitments(el) {
       <thead><tr><th>Organization</th><th>Schedule</th><th class="n">Total Commitment</th><th class="n">Paid to Date</th><th class="n">Remaining</th></tr></thead>
       <tbody>${rows.map(({ c, paid, rem }) => `
         <tr class="click" data-org="${esc(c.o)}">
-          <td><div class="org-name">${esc(c.label)}</div><div class="org-meta">${catChip(c.c)}</div>${c.note ? `<div class="sec-sub" style="margin-top:4px">${esc(c.note)}</div>` : ''}</td>
-          <td><div class="sched">${c.sched.map(([y, a]) => {
+          <td><div class="org-name">${esc(c.label)}</div><div class="org-meta">${catChip(c.c)}${MV.has(c.o) ? '<span class="tag gold">Deferred to 2027</span>' : ''}</div>${MV.has(c.o) ? `<div class="sec-sub" style="margin-top:4px">2026 gift moved — schedule shifted one year</div>` : c.note ? `<div class="sec-sub" style="margin-top:4px">${esc(c.note)}</div>` : ''}</td>
+          <td><div class="sched">${effSched(c, MV).map(([y, a]) => {
             const p = y <= CY ? commitPaid(c, y) : 0;
             const st = p >= a ? 'paid' : y === CY ? 'due' : y < CY ? 'due' : 'future';
             const due = c.due && c.due[y] ? c.due[y] : y;
@@ -772,7 +795,7 @@ function openOrg(name) {
       </div>
 
       ${c ? `<div class="card mt"><h3 class="sec" style="font-size:18px">Commitment Schedule</h3><div class="sec-sub" style="margin-bottom:10px">${fmt(c.total)} total${c.note ? ' · ' + esc(c.note) : ''}</div>
-        <div class="sched">${c.sched.map(([y, a]) => { const p = y <= CY ? commitPaid(c, y) : 0; const st = p >= a ? 'paid' : y <= CY ? 'due' : 'future'; return `<span class="yr ${st}"><b>${esc(String(c.due && c.due[y] ? c.due[y] : y))}</b>${fmt(a)}${st === 'paid' ? ' ✓' : ''}</span>`; }).join('')}</div></div>` : ''}
+        <div class="sched">${effSched(c, movedSet()).map(([y, a]) => { const p = y <= CY ? commitPaid(c, y) : 0; const st = p >= a ? 'paid' : y <= CY ? 'due' : 'future'; return `<span class="yr ${st}"><b>${esc(String(c.due && c.due[y] ? c.due[y] : y))}</b>${fmt(a)}${st === 'paid' ? ' ✓' : ''}</span>`; }).join('')}</div></div>` : ''}
 
       <div class="card mt">
         <h3 class="sec" style="font-size:18px">Giving by Year</h3>
@@ -834,180 +857,405 @@ function openCategory(cat, year) {
     </div>`, body => $$('[data-org]', body).forEach(n => n.addEventListener('click', () => openOrg(n.dataset.org))));
 }
 
+
 /* =========================================================
-   VIEW: 2027 Budget builder
+   2027 Budget — draft store, deferrals, commitments
    ========================================================= */
 const BKEY = 'tlf_budget_2027_v1';
-const nextCommit = o => {
+const NO_MOVE = new Set(["Children's Medical Center Foundation"]);   // will be paid in 2026
+const unpaid26 = o => { const x = M.orgs[o]; return x && x.target ? Math.max(0, x.target - (x.byYear[CY] || 0)) : 0; };
+const canMove = o => unpaid26(o) > 0 && !NO_MOVE.has(o) && !M.monthly[o];
+function effSched(c, MV) {
+  // A deferred commitment shifts every unpaid year from 2026 onward by one year
+  if (!MV || !MV.has(c.o)) return c.sched;
+  return c.sched.map(([y, a, p]) => y >= CY ? [y + 1, a, null] : [y, a, p]);
+}
+function nextCommit(o, MV) {
   const c = M.commit[o]; let a = 0;
-  if (c) c.sched.forEach(([y, amt]) => { if (y === NY) a += amt; });
+  if (c) effSched(c, MV).forEach(([y, amt]) => { if (y === NY) a += amt; });
   if (M.monthly[o]) a = Math.max(a, M.monthly[o] * 12);
   return a;
-};
-const commitNote = o => {
-  const c = M.commit[o];
-  const parts = [];
+}
+function commitNote(o, MV) {
+  const c = M.commit[o], parts = [];
   if (c) {
-    const s = c.sched.find(x => x[0] === NY);
-    if (s) parts.push(`Commitment: ${fmt(s[1])}${c.due && c.due[NY] ? ' (' + c.due[NY] + ')' : ''}`);
-    if (o === 'Trinity Christian Academy') parts.push('If the 2026 gift is deferred, 2027 may total $2M');
+    const sch = effSched(c, MV), s = sch.find(x => x[0] === NY);
+    if (MV && MV.has(o)) parts.push(`2026 gift moved to 2027 · schedule now ${sch.filter(x => x[0] >= NY).map(x => x[0]).join(', ')}`);
+    else if (s) parts.push(`Commitment: ${fmt(s[1])}${c.due && c.due[NY] ? ' (' + c.due[NY] + ')' : ''}`);
   }
   if (M.monthly[o]) parts.push(`Monthly gift ${fmt(M.monthly[o])} × 12`);
   return parts.join(' · ');
-};
+}
 function defaultBudget() {
   const rows = D.targets.map(t => ({ o: t.o, cat: t.c, grp: t.g, inc: true, amt: nextCommit(t.o) || null, note: '', isNew: false }));
-  // recurring monthly gifts outside the target list
   D.monthly.forEach(m => { if (!rows.find(r => r.o === m.o)) { const o = M.orgs[m.o]; rows.push({ o: m.o, cat: o.cat, grp: 'Other', inc: true, amt: m.a * 12, note: '', isNew: false }); } });
   D.commitments.forEach(c => { if (!rows.find(r => r.o === c.o) && nextCommit(c.o)) rows.push({ o: c.o, cat: c.c, grp: 'Core', inc: true, amt: nextCommit(c.o), note: '', isNew: false }); });
-  return { rows, notes: '', touched: false };
+  return { v: 2, rows, moved: {}, notes: '', touched: false, savedAt: null };
 }
-function loadBudget() {
-  try { const b = JSON.parse(LS.get(BKEY)); if (b && b.rows) return b; } catch (e) { }
+function normalizeDraft(b) {
+  if (!b || !Array.isArray(b.rows)) return null;
+  b.rows = b.rows.filter(r => r && r.o).map(r => ({ o: String(r.o), cat: CATS.includes(r.cat) ? r.cat : (M.orgs[r.o] ? M.orgs[r.o].cat : CATS[0]), grp: r.grp === 'Core' ? 'Core' : 'Other', inc: r.inc !== false, amt: (typeof r.amt === 'number' && isFinite(r.amt)) ? Math.round(r.amt) : null, note: String(r.note || ''), isNew: !!r.isNew }));
+  b.moved = b.moved && typeof b.moved === 'object' ? b.moved : {};
+  b.notes = String(b.notes || ''); b.touched = !!b.touched; b.v = 2;
+  return b;
+}
+function loadDraft() {
+  try { const b = normalizeDraft(JSON.parse(LS.get(BKEY))); if (b) return b; } catch (e) { }
   return defaultBudget();
 }
-function saveBudget(b) { LS.set(BKEY, JSON.stringify(b)); }
+function saveDraft(b) { b.savedAt = new Date().toISOString(); LS.set(BKEY, JSON.stringify(b)); }
+function movedSet(b) {
+  b = b || loadDraft();
+  const s = new Set();
+  Object.keys(b.moved || {}).forEach(o => { if (b.moved[o] && canMove(o) && (b.rows.find(r => r.o === o) || {}).inc !== false) s.add(o); });
+  return s;
+}
 
+/* ---------- Modal ---------- */
+function modal({ title, body, buttons }) {
+  return new Promise(resolve => {
+    const wrap = document.createElement('div');
+    wrap.className = 'modal-wrap';
+    wrap.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+      <h3 id="mTitle">${title}</h3><div class="m-body">${body}</div>
+      <div class="m-actions">${buttons.map((b, i) => `<button class="btn ${b.cls || ''}" data-i="${i}">${b.label}</button>`).join('')}</div></div>`;
+    document.body.appendChild(wrap);
+    const close = v => { wrap.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+    const onKey = e => { if (e.key === 'Escape') close(null); };
+    document.addEventListener('keydown', onKey);
+    wrap.addEventListener('click', e => { if (e.target === wrap) close(null); });
+    $$('[data-i]', wrap).forEach(btn => btn.addEventListener('click', () => {
+      const b = buttons[+btn.dataset.i];
+      if (b.validate) { const ok = b.validate(wrap); if (!ok) return; }
+      close(b.value !== undefined ? (typeof b.value === 'function' ? b.value(wrap) : b.value) : null);
+    }));
+    const first = $('input,select,textarea', wrap) || $('.btn-primary,.btn-gold', wrap); if (first) first.focus();
+  });
+}
+
+/* =========================================================
+   VIEW: 2027 Budget builder
+   ========================================================= */
 function viewBudget(el) {
-  const B = loadBudget();
+  const B = loadDraft();
+  const openRows = new Set();
+  let showRemoved = false;
   const hist = o => { const x = M.orgs[o]; return x ? [x.byYear[2024] || 0, x.byYear[2025] || 0, x.byYear[2026] || 0] : [0, 0, 0]; };
   const tgt26 = o => (M.orgs[o] && M.orgs[o].target) || 0;
+  const paid26 = o => (M.orgs[o] && M.orgs[o].byYear[CY]) || 0;
+  const parseAmt = v => { const n = parseFloat(String(v).replace(/[^0-9.\-]/g, '')); return isNaN(n) ? null : Math.round(n); };
+  const persist = (touch = true) => { if (touch) B.touched = true; saveDraft(B); drawStatus(); };
+  const MVnow = () => movedSet(B);
+  const rowEl = o => $(`.brow[data-o="${CSS.escape(o)}"]`, el);
 
   el.innerHTML = `
-  <div class="page-head">
+  <div class="page-head" style="margin-bottom:14px">
     <div><div class="eyebrow"><a href="#/giving" style="text-decoration:none">← Back to 2026 Giving</a></div>
       <h1 class="title">2027 Target Giving Budget</h1>
-      <p class="subtitle">Start from the 2026 Target organizations with trailing three-year giving. Annual commitments and recurring monthly gifts are pre-filled. Include or remove organizations, add new ones, set 2027 targets, then export.</p></div>
+      <p class="subtitle">Set a 2027 target for each organization. Three years of history, 2026 targets and existing commitments are shown for reference. Your work saves automatically.</p></div>
+  </div>
+  <div class="bbar" id="bBar">
+    <div class="bbar-kpis" id="bKpis"></div>
+    <div class="bbar-actions">
+      <span class="save-status" id="bSaved"></span>
+      <div class="menu">
+        <button class="btn" id="bDraftBtn" aria-haspopup="true" aria-expanded="false">Draft ▾</button>
+        <div class="menu-list" id="bDraftMenu" hidden>
+          <button data-m="save">Save draft file…<small>Download to reopen on any device</small></button>
+          <button data-m="open">Open a saved draft…<small>A draft file or an exported Excel budget</small></button>
+          <button data-m="blank">Download blank template<small>2026 target list with empty 2027 column</small></button>
+          <button data-m="reset" class="danger">Start over<small>Clear this draft and reload 2026 targets</small></button>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="bXlsx">Export Excel</button>
+      <button class="btn btn-gold" id="bPdf">Export PDF</button>
+    </div>
+  </div>
+  <div class="btools">
+    <div class="seg" id="bTabs"></div>
     <div class="toolbar">
-      <button class="btn" id="bReset" title="Reset to the default 2026 target list">Reset</button>
-      <button class="btn" id="bBlank">Blank template</button>
-      <button class="btn btn-primary" id="bXlsx">Export to Excel</button>
-      <button class="btn btn-gold" id="bPdf">Export to PDF</button>
+      <button class="btn" id="bFill" title="Fill every blank 2027 Target with that organization's 2026 Target">Start from 2026 targets</button>
+      <button class="btn btn-primary" id="bAdd">+ Add Organization</button>
     </div>
   </div>
-  <div class="b-summary" id="bSum"></div>
-  <div class="note mt" id="bMode"></div>
-  <div class="card mt">
-    <div class="sec-head"><div><h2 class="sec">Add an Organization</h2><div class="sec-sub">Choose a previously supported organization (history fills in automatically) or type a new one — new organizations require a Giving Category.</div></div></div>
-    <div class="add-panel">
-      <div><label for="aName">Organization</label><input class="input" id="aName" list="aList" placeholder="Search or type a new organization…"><datalist id="aList"></datalist></div>
-      <div><label for="aCat">Giving Category</label><select class="select" id="aCat"><option value="">Choose a category…</option>${CATS.map(c => `<option>${esc(c)}</option>`).join('')}</select></div>
-      <div><label for="aGrp">Type</label><select class="select" id="aGrp"><option value="Core">Core Giving</option><option value="Other">The "Bucket"</option></select></div>
-      <div><label for="aAmt">2027 Target</label><input class="input" id="aAmt" inputmode="numeric" placeholder="$0"></div>
-      <div><button class="btn btn-primary" id="aAdd">Add</button></div>
-    </div>
-    <div class="field-err" id="aErr"></div>
+  <div class="card flush" id="bListCard">
+    <div class="bhead"><span>Organization</span><span>Giving 2024 · 2025 · 2026 YTD</span><span class="r">2026 Target</span><span class="r">2027 Target</span><span></span></div>
+    <div id="bList"></div>
+    <div class="bfoot" id="bFoot"></div>
   </div>
-  <div class="card flush mt">
-    <div class="tbl-wrap"><table class="tbl" id="bTbl"></table></div>
-  </div>
+  <div id="bRemoved"></div>
   <div class="card mt">
     <h2 class="sec" style="font-size:20px">Notes &amp; Comments</h2>
     <div class="sec-sub" style="margin-bottom:10px">Included at the bottom of the PDF and Excel exports.</div>
     <textarea class="notes" id="bNotes" placeholder="Priorities, timing, matching-gift ideas, questions for Kaye Dawn…">${esc(B.notes)}</textarea>
-  </div>`;
+  </div>
+  <div class="note mt"><b>How saving works:</b> every change saves automatically in this browser on this device. To continue on another device — or to share a draft — use <b>Draft ▸ Save draft file</b>, then <b>Draft ▸ Open a saved draft</b> on the other device. An exported Excel budget can also be reopened to keep editing.</div>
+  <input type="file" id="bFile" accept=".json,.xlsx,application/json" hidden>`;
 
-  const parseAmt = v => { const n = parseFloat(String(v).replace(/[^0-9.\-]/g, '')); return isNaN(n) ? null : Math.round(n); };
-  const persist = (touch = true) => { if (touch) B.touched = true; saveBudget(B); };
-
-  const refreshList = () => {
-    const have = new Set(B.rows.map(r => r.o));
-    $('#aList').innerHTML = M.list.filter(o => !have.has(o.name) && o.n).sort((a, b) => b.total - a.total).map(o => `<option value="${esc(o.name)}">${esc(o.cat)} · ${fmtK(o.total)} since 2020</option>`).join('');
+  /* ----- summary bar ----- */
+  const drawStatus = () => {
+    const t = B.savedAt ? new Date(B.savedAt) : null;
+    $('#bSaved').innerHTML = t ? `<span class="dot" style="background:var(--good)"></span>Saved on this device · ${t.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : `<span class="dot" style="background:#CFCAC0"></span>Not yet edited`;
   };
-
-  const drawSummary = () => {
+  const drawKpis = () => {
+    const MV = MVnow();
     const inc = B.rows.filter(r => r.inc);
     const tot = sum(inc, r => r.amt || 0);
     const core = sum(inc.filter(r => r.grp === 'Core'), r => r.amt || 0);
-    const committed = sum(inc, r => nextCommit(r.o));
+    const moved = sum(inc.filter(r => MV.has(r.o)), r => unpaid26(r.o));
     const t26 = sum(D.targets, t => t.t);
     const diff = tot - t26;
-    $('#bSum').innerHTML = `
-      <div class="card" style="background:var(--navy);border-color:var(--navy);color:#fff"><div class="l" style="color:#C9BFAE">2027 Target Total</div><div class="v" style="color:#fff">${fmt(tot)}</div><div class="s" style="color:#D7DEE3">${inc.length} organizations</div></div>
-      <div class="card"><div class="l">Core Giving</div><div class="v">${fmt(core)}</div><div class="s">${inc.filter(r => r.grp === 'Core').length} organizations</div></div>
-      <div class="card"><div class="l">The "Bucket"</div><div class="v">${fmt(tot - core)}</div><div class="s">${inc.filter(r => r.grp !== 'Core').length} organizations</div></div>
-      <div class="card"><div class="l">Already Committed</div><div class="v">${fmt(committed)}</div><div class="s">Commitments &amp; monthly gifts</div></div>
-      <div class="card"><div class="l">vs. 2026 Target</div><div class="v" style="color:${diff > 0 ? 'var(--warn)' : 'var(--navy)'}">${diff >= 0 ? '+' : ''}${fmt(diff)}</div><div class="s">2026 target ${fmt(t26)}</div></div>`;
-    $('#bMode').innerHTML = B.touched
-      ? `<b>Your edits are saved on this device.</b> Exports will use the organizations and amounts below. Use <b>Blank template</b> for an empty worksheet based on the 2026 Target list.`
-      : `<b>Not yet customized.</b> Until you edit this budget, exports default to the 2026 Target organizations with a blank 2027 column to fill in, extra empty rows for new organizations, and space for notes.`;
+    $('#bKpis').innerHTML = `
+      <div class="bk hero"><span>2027 Total</span><b>${fmt(tot)}</b></div>
+      <div class="bk"><span>Core</span><b>${fmt(core)}</b></div>
+      <div class="bk"><span>The "Bucket"</span><b>${fmt(tot - core)}</b></div>
+      <div class="bk"><span>Moved from 2026</span><b>${fmt(moved)}</b></div>
+      <div class="bk"><span>vs. 2026 Target</span><b style="color:${diff > 0 ? 'var(--warn)' : 'var(--navy)'}">${diff >= 0 ? '+' : '–'}${fmt(Math.abs(diff))}</b></div>`;
   };
 
-  const drawTable = () => {
-    const sections = [['Core', 'Core Giving'], ['Other', 'The "Bucket" — Other Giving']];
-    const rowHTML = (r, i) => {
-      const [a, b, c] = hist(r.o), com = nextCommit(r.o), note = commitNote(r.o);
-      return `<tr class="${r.inc ? '' : 'excluded'} ${r.isNew ? 'newrow' : ''}" data-i="${i}">
-        <td><input type="checkbox" class="chk" data-f="inc" ${r.inc ? 'checked' : ''} aria-label="Include ${esc(r.o)}"></td>
-        <td style="min-width:200px"><div class="org-name">${r.isNew ? esc(r.o) : `<a href="javascript:void 0" data-open="${esc(r.o)}" style="text-decoration:none">${esc(r.o)}</a>`} ${r.isNew ? '<span class="tag gold">New</span>' : ''}</div>${note ? `<div class="sec-sub" style="margin-top:3px">${esc(note)}</div>` : ''}</td>
-        <td><select class="mini" data-f="cat">${CATS.map(x => `<option ${x === r.cat ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></td>
-        <td><select class="mini" data-f="grp"><option value="Core" ${r.grp === 'Core' ? 'selected' : ''}>Core</option><option value="Other" ${r.grp !== 'Core' ? 'selected' : ''}>Bucket</option></select></td>
-        <td class="n">${fmtZ(a)}</td><td class="n">${fmtZ(b)}</td><td class="n">${fmtZ(c)}</td>
-        <td class="n">${fmtZ(tgt26(r.o))}</td>
-        <td class="n">${com ? `<span class="tag gold">${fmt(com)}</span>` : '<span class="zero">—</span>'}</td>
-        <td class="n"><input class="amt ${r.amt ? 'filled' : ''}" data-f="amt" inputmode="numeric" value="${r.amt ? fmt(r.amt) : ''}" placeholder="$0"></td>
-        <td><input class="txt" data-f="note" value="${esc(r.note)}" placeholder="Notes"></td>
-        <td><button class="btn btn-ghost btn-sm" data-f="del" title="Remove" aria-label="Remove ${esc(r.o)}">✕</button></td>
-      </tr>`;
-    };
-    let body = '';
-    sections.forEach(([g, label]) => {
-      const idx = B.rows.map((r, i) => [r, i]).filter(([r]) => (g === 'Core' ? r.grp === 'Core' : r.grp !== 'Core'));
-      idx.sort((x, y) => (y[0].amt || 0) - (x[0].amt || 0) || tgt26(y[0].o) - tgt26(x[0].o));
-      const inc = idx.filter(([r]) => r.inc).map(([r]) => r);
-      body += `<tr class="sub"><td></td><td colspan="7">${label}</td><td class="n">${fmt(sum(inc, r => nextCommit(r.o)))}</td><td class="n">${fmt(sum(inc, r => r.amt || 0))}</td><td colspan="2"></td></tr>`;
-      body += idx.map(([r, i]) => rowHTML(r, i)).join('');
-    });
+  /* ----- tabs ----- */
+  const tabDefs = () => {
     const inc = B.rows.filter(r => r.inc);
-    $('#bTbl').innerHTML = `
-      <thead><tr><th></th><th>Organization</th><th>Giving Category</th><th>Type</th><th class="n">2024</th><th class="n">2025</th><th class="n">2026 YTD</th><th class="n">2026 Target</th><th class="n">2027 Committed</th><th class="n">2027 Target</th><th>Notes</th><th></th></tr></thead>
-      <tbody>${body}</tbody>
-      <tfoot><tr><td></td><td colspan="3">2027 Total (included organizations)</td><td class="n">${fmt(sum(inc, r => hist(r.o)[0]))}</td><td class="n">${fmt(sum(inc, r => hist(r.o)[1]))}</td><td class="n">${fmt(sum(inc, r => hist(r.o)[2]))}</td><td class="n">${fmt(sum(inc, r => tgt26(r.o)))}</td><td class="n">${fmt(sum(inc, r => nextCommit(r.o)))}</td><td class="n">${fmt(sum(inc, r => r.amt || 0))}</td><td colspan="2"></td></tr></tfoot>`;
-    $$('#bTbl tr[data-i]').forEach(tr => {
-      const r = B.rows[+tr.dataset.i];
-      $$('[data-f]', tr).forEach(inp => {
-        const f = inp.dataset.f;
-        if (f === 'inc') inp.addEventListener('change', () => { r.inc = inp.checked; persist(); drawAll(); });
-        if (f === 'cat') inp.addEventListener('change', () => { r.cat = inp.value; persist(); drawSummary(); });
-        if (f === 'grp') inp.addEventListener('change', () => { r.grp = inp.value; persist(); drawAll(); });
-        if (f === 'note') inp.addEventListener('input', () => { r.note = inp.value; persist(); });
-        if (f === 'amt') {
-          inp.addEventListener('focus', () => { inp.value = r.amt ? String(r.amt) : ''; });
-          inp.addEventListener('blur', () => { r.amt = parseAmt(inp.value); persist(); drawAll(); });
-          inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
-        }
-        if (f === 'del') inp.addEventListener('click', () => { B.rows.splice(+tr.dataset.i, 1); persist(); drawAll(); });
-      });
-      const a = $('[data-open]', tr); if (a) a.addEventListener('click', () => openOrg(a.dataset.open));
-    });
+    return [
+      ['Core', 'Core Giving', inc.filter(r => r.grp === 'Core' && !r.isNew)],
+      ['Other', 'The "Bucket"', inc.filter(r => r.grp !== 'Core' && !r.isNew)],
+      ['New', 'New Organizations', inc.filter(r => r.isNew)],
+      ['Unpaid', 'Unpaid 2026', inc.filter(r => canMove(r.o))],
+      ['All', 'All', inc]
+    ];
   };
-  const drawAll = () => { drawSummary(); drawTable(); refreshList(); };
+  const drawTabs = () => {
+    $('#bTabs').innerHTML = tabDefs().map(([k, l, L]) => `<button data-k="${k}" class="${S.bTab === k ? 'on' : ''}">${l} <span class="cnt">${L.length}</span></button>`).join('');
+    $$('#bTabs button').forEach(b => b.addEventListener('click', () => { S.bTab = b.dataset.k; drawAll(); }));
+  };
 
-  // add organization
-  $('#aName').addEventListener('input', () => {
-    const o = M.orgs[$('#aName').value.trim()];
-    if (o) { $('#aCat').value = CATS.includes(o.cat) ? o.cat : ''; $('#aGrp').value = o.target ? o.tgrp : (o.grp || 'Other'); }
+  /* ----- list ----- */
+  const rowHTML = r => {
+    const MV = MVnow();
+    const [a, b, c] = hist(r.o), t26 = tgt26(r.o), p26 = paid26(r.o), com = nextCommit(r.o, MV), note = commitNote(r.o, MV);
+    const moved = MV.has(r.o), movable = canMove(r.o), isOpen = openRows.has(r.o);
+    return `<div class="brow ${moved ? 'moved' : ''} ${isOpen ? 'open' : ''}" data-o="${esc(r.o)}">
+      <div class="b-org">
+        <button class="b-name" data-act="hist" ${r.isNew ? 'disabled' : ''}>${esc(r.o)}</button>
+        <div class="org-meta">${catChip(r.cat)}${r.isNew ? '<span class="tag gold">New</span>' : ''}${M.commit[r.o] ? '<span class="tag outline">Commitment</span>' : ''}${M.monthly[r.o] ? '<span class="tag outline">Monthly</span>' : ''}${moved ? '<span class="tag gold">Deferred from 2026</span>' : ''}${r.note ? '<span class="tag muted" title="Has notes">✎ Note</span>' : ''}</div>
+        ${note ? `<div class="b-sub">${esc(note)}</div>` : ''}
+        ${movable ? `<label class="b-move"><input type="checkbox" class="chk" data-act="move" ${moved ? 'checked' : ''}><span>${moved ? `${fmt(unpaid26(r.o))} moved from 2026 to 2027` : `${fmt(unpaid26(r.o))} unpaid in 2026 — <b>Move to 2027?</b>`}</span></label>` : ''}
+      </div>
+      <div class="b-hist"><span><i>2024</i>${a ? fmtK(a) : '—'}</span><span><i>2025</i>${b ? fmtK(b) : '—'}</span><span><i>2026</i>${c ? fmtK(c) : '—'}</span></div>
+      <div class="b-t26"><i>2026 Target</i><b>${t26 ? fmt(t26) : '—'}</b>${t26 ? `<small>${p26 >= t26 ? '✓ Paid' : p26 ? 'Paid ' + fmt(p26) : moved ? 'Deferred' : 'Not yet paid'}</small>` : ''}</div>
+      <div class="b-t27"><i>2027 Target</i><input class="amt ${r.amt ? 'filled' : ''}" data-act="amt" inputmode="numeric" value="${r.amt ? fmt(r.amt) : ''}" placeholder="$0" aria-label="2027 target for ${esc(r.o)}">${com ? `<small>Committed ${fmt(com)}</small>` : ''}</div>
+      <button class="b-more" data-act="toggle" aria-expanded="${isOpen}" aria-label="More options for ${esc(r.o)}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="b-panel">
+        <label class="b-f wide"><span>Notes</span><input class="input" data-act="note" value="${esc(r.note)}" placeholder="Add a note for this organization"></label>
+        <label class="b-f"><span>Giving Category</span><select class="select" data-act="cat">${CATS.map(x => `<option ${x === r.cat ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
+        <label class="b-f"><span>Type</span><select class="select" data-act="grp"><option value="Core" ${r.grp === 'Core' ? 'selected' : ''}>Core Giving</option><option value="Other" ${r.grp !== 'Core' ? 'selected' : ''}>The "Bucket"</option></select></label>
+        <div class="b-f"><span>&nbsp;</span><button class="btn btn-sm" data-act="remove">Remove from 2027</button></div>
+      </div>
+    </div>`;
+  };
+  const drawList = () => {
+    const def = tabDefs().find(t => t[0] === S.bTab) || tabDefs()[0];
+    let L = def[2].slice();
+    L.sort((x, y) => (y.amt || 0) - (x.amt || 0) || tgt26(y.o) - tgt26(x.o) || x.o.localeCompare(y.o));
+    const MV = MVnow();
+    const empty = { New: 'No new organizations yet — use <b>+ Add Organization</b>.', Unpaid: 'Every 2026 target has been paid.' }[def[0]] || 'No organizations in this list.';
+    $('#bList').innerHTML = L.length ? L.map(rowHTML).join('') : `<div class="b-empty">${empty}</div>`;
+    $('#bFoot').innerHTML = `<span>${esc(def[1])} · ${L.length} organization${L.length === 1 ? '' : 's'}</span><span>Committed <b>${fmt(sum(L, r => nextCommit(r.o, MV)))}</b></span><span>2027 Target <b>${fmt(sum(L, r => r.amt || 0))}</b></span>`;
+    $$('#bList .brow').forEach(rowEl => bindRow(rowEl));
+  };
+  const drawRemoved = () => {
+    const R = B.rows.filter(r => !r.inc);
+    $('#bRemoved').innerHTML = R.length ? `<div class="card mt removed">
+      <button class="btn btn-ghost btn-sm" id="bRemToggle">${showRemoved ? '▾' : '▸'} Removed organizations (${R.length})</button>
+      ${showRemoved ? `<div class="mt">${R.map(r => `<div class="rem-row"><span>${esc(r.o)} ${catChip(r.cat)}</span><button class="btn btn-sm" data-restore="${esc(r.o)}">Restore</button></div>`).join('')}</div>` : ''}</div>` : '';
+    const t = $('#bRemToggle'); if (t) t.addEventListener('click', () => { showRemoved = !showRemoved; drawRemoved(); });
+    $$('[data-restore]').forEach(b => b.addEventListener('click', () => { const r = B.rows.find(x => x.o === b.dataset.restore); r.inc = true; persist(); drawAll(); toast(`${r.o} restored`); }));
+  };
+  const drawAll = () => { drawKpis(); drawTabs(); drawList(); drawRemoved(); drawStatus(); };
+
+  /* ----- row interactions ----- */
+  function bindRow(node) {
+    const r = B.rows.find(x => x.o === node.dataset.o); if (!r) return;
+    $$('[data-act]', node).forEach(inp => {
+      const act = inp.dataset.act;
+      if (act === 'hist') inp.addEventListener('click', () => openOrg(r.o));
+      if (act === 'toggle') inp.addEventListener('click', () => { openRows.has(r.o) ? openRows.delete(r.o) : openRows.add(r.o); node.classList.toggle('open'); inp.setAttribute('aria-expanded', node.classList.contains('open')); });
+      if (act === 'amt') {
+        inp.addEventListener('focus', () => { inp.value = r.amt ? String(r.amt) : ''; inp.select(); });
+        inp.addEventListener('blur', () => { const v = parseAmt(inp.value); if (v !== r.amt) { r.amt = v; persist(); } inp.value = r.amt ? fmt(r.amt) : ''; inp.classList.toggle('filled', !!r.amt); drawKpis(); drawFootOnly(); });
+        inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); const all = $$('#bList input[data-act="amt"]'); const i = all.indexOf(inp); inp.blur(); if (all[i + 1]) all[i + 1].focus(); } });
+      }
+      if (act === 'note') inp.addEventListener('input', () => { r.note = inp.value; persist(); });
+      if (act === 'note') inp.addEventListener('change', () => drawList());
+      if (act === 'cat') inp.addEventListener('change', () => { r.cat = inp.value; persist(); drawAll(); });
+      if (act === 'grp') inp.addEventListener('change', () => { r.grp = inp.value; persist(); drawAll(); });
+      if (act === 'remove') inp.addEventListener('click', () => { r.inc = false; openRows.delete(r.o); persist(); drawAll(); toast(`${r.o} removed — restore it from "Removed organizations" below`); });
+      if (act === 'move') inp.addEventListener('change', async () => {
+        if (inp.checked) {
+          const ok = await confirmMove(r);
+          if (!ok) { inp.checked = false; return; }
+        } else {
+          delete B.moved[r.o];
+          if (M.commit[r.o]) { const nc = nextCommit(r.o, new Set()); if (!r.amt) r.amt = nc || null; }
+          persist(); toast(`${r.o} is back in 2026 remaining to give`);
+        }
+        drawAll();
+      });
+    });
+  }
+  const drawFootOnly = () => { const def = tabDefs().find(t => t[0] === S.bTab) || tabDefs()[0]; const L = def[2]; const MV = MVnow(); $('#bFoot').innerHTML = `<span>${esc(def[1])} · ${L.length} organization${L.length === 1 ? '' : 's'}</span><span>Committed <b>${fmt(sum(L, r => nextCommit(r.o, MV)))}</b></span><span>2027 Target <b>${fmt(sum(L, r => r.amt || 0))}</b></span>`; };
+
+  async function confirmMove(r) {
+    const amt = unpaid26(r.o), t26 = tgt26(r.o), p = paid26(r.o);
+    if (M.commit[r.o]) {
+      const c = M.commit[r.o];
+      const after = effSched(c, new Set([r.o])).filter(x => x[0] >= NY).map(x => `${x[0]} ${fmtK(x[1])}`).join(' · ');
+      const res = await modal({
+        title: `Move ${esc(c.label)}'s commitment to 2027?`,
+        body: `<p>The ${fmt(amt)} gift scheduled for 2026 moves to 2027, and the rest of the annual commitment shifts one year with it.</p>
+               <p class="m-sched"><span>New schedule:</span> ${after}</p>
+               <p class="sec-sub">It will show as <b>Deferred to 2027</b> on the 2026 Giving page and be removed from 2026 remaining to give.</p>`,
+        buttons: [{ label: 'Cancel', value: null }, { label: 'Move to 2027', cls: 'btn-gold', value: 'move' }]
+      });
+      if (res !== 'move') return false;
+      B.moved[r.o] = true;
+      r.amt = nextCommit(r.o, new Set([r.o])) || r.amt;
+      persist(); toast(`${r.o}: commitment moved one year`);
+      return true;
+    }
+    const replaceNote = r.amt ? `<p class="sec-sub">This will replace the ${fmt(r.amt)} currently entered for 2027.</p>` : '';
+    const res = await modal({
+      title: 'Move to 2027',
+      body: `<p><b>${esc(r.o)}</b> has a 2026 Target of ${fmt(t26)}${p ? ` (${fmt(p)} paid, ${fmt(amt)} unpaid)` : ''}.</p>
+             <p>Do you want to move the 2026 Target Amount to 2027, or remove from 2026 and enter a new amount for 2027?</p>${replaceNote}`,
+      buttons: [{ label: 'Cancel', value: null }, { label: 'Enter a new 2027 amount', value: 'new' }, { label: `Move ${fmt(amt)} to 2027`, cls: 'btn-gold', value: 'move' }]
+    });
+    if (!res) return false;
+    B.moved[r.o] = true;
+    r.amt = res === 'move' ? amt : null;
+    persist();
+    if (res === 'new') setTimeout(() => { const n = rowEl(r.o); const i = n && $('input[data-act="amt"]', n); if (i) i.focus(); }, 30);
+    toast(res === 'move' ? `${fmt(amt)} moved to 2027 for ${r.o}` : `${r.o} removed from 2026 — enter the 2027 amount`);
+    return true;
+  }
+
+  /* ----- toolbar actions ----- */
+  $('#bFill').addEventListener('click', async () => {
+    const blanks = B.rows.filter(r => r.inc && !r.amt && tgt26(r.o));
+    if (!blanks.length) { toast('Every organization with a 2026 Target already has a 2027 amount'); return; }
+    const res = await modal({ title: 'Start from 2026 targets', body: `<p>Fill ${blanks.length} blank 2027 Target${blanks.length === 1 ? '' : 's'} with each organization's 2026 Target (${fmt(sum(blanks, r => tgt26(r.o)))} total)?</p><p class="sec-sub">Amounts you've already entered won't change.</p>`, buttons: [{ label: 'Cancel', value: null }, { label: 'Fill blanks', cls: 'btn-primary', value: 'ok' }] });
+    if (res !== 'ok') return;
+    blanks.forEach(r => r.amt = tgt26(r.o)); persist(); drawAll(); toast(`${blanks.length} 2027 targets filled`);
   });
-  $('#aAdd').addEventListener('click', () => {
-    const name = $('#aName').value.trim(), cat = $('#aCat').value, grp = $('#aGrp').value;
-    const err = $('#aErr'); err.textContent = '';
-    if (!name) { err.textContent = 'Enter an organization name.'; return; }
-    if (B.rows.find(r => r.o.toLowerCase() === name.toLowerCase())) { err.textContent = 'That organization is already in the budget.'; return; }
-    const existing = M.orgs[name];
-    if (!cat) { err.textContent = existing ? 'Choose a Giving Category.' : 'New organization — please choose its Giving Category.'; $('#aCat').focus(); return; }
-    B.rows.push({ o: name, cat, grp, inc: true, amt: parseAmt($('#aAmt').value), note: '', isNew: !existing });
-    persist(); drawAll();
-    $('#aName').value = ''; $('#aAmt').value = ''; $('#aCat').value = '';
-    toast(`${name} added to the 2027 budget`);
+  $('#bAdd').addEventListener('click', async () => {
+    const have = new Set(B.rows.map(r => r.o));
+    const opts = M.list.filter(o => !have.has(o.name) && o.n).sort((a, b) => b.total - a.total).map(o => `<option value="${esc(o.name)}">${esc(o.cat)} · ${fmtK(o.total)} since 2020</option>`).join('');
+    const res = await modal({
+      title: 'Add an Organization',
+      body: `<div class="m-form">
+        <label><span>Organization</span><input class="input" id="aName" list="aList" placeholder="Search past organizations or type a new one"><datalist id="aList">${opts}</datalist></label>
+        <label><span>Giving Category</span><select class="select" id="aCat"><option value="">Choose a category…</option>${CATS.map(c => `<option>${esc(c)}</option>`).join('')}</select></label>
+        <label><span>Type</span><select class="select" id="aGrp"><option value="Core">Core Giving</option><option value="Other">The "Bucket"</option></select></label>
+        <label><span>2027 Target</span><input class="input" id="aAmt" inputmode="numeric" placeholder="$0"></label>
+        <p class="field-err" id="aErr"></p></div>`,
+      buttons: [{ label: 'Cancel', value: null }, {
+        label: 'Add', cls: 'btn-primary',
+        validate: w => {
+          const name = $('#aName', w).value.trim(), cat = $('#aCat', w).value, err = $('#aErr', w);
+          if (!name) { err.textContent = 'Enter an organization name.'; return false; }
+          const dup = B.rows.find(r => r.o.toLowerCase() === name.toLowerCase());
+          if (dup) { err.textContent = dup.inc ? 'That organization is already in the budget.' : 'That organization was removed — restore it from "Removed organizations".'; return false; }
+          if (!cat) { err.textContent = M.orgs[name] ? 'Choose a Giving Category.' : 'New organization — please choose its Giving Category.'; return false; }
+          return true;
+        },
+        value: w => ({ name: $('#aName', w).value.trim(), cat: $('#aCat', w).value, grp: $('#aGrp', w).value, amt: parseAmt($('#aAmt', w).value) })
+      }]
+    });
+    if (!res) return;
+    const existing = !!M.orgs[res.name];
+    B.rows.push({ o: res.name, cat: res.cat, grp: res.grp, inc: true, amt: res.amt, note: '', isNew: !existing });
+    S.bTab = existing ? (res.grp === 'Core' ? 'Core' : 'Other') : 'New';
+    persist(); drawAll(); toast(`${res.name} added to the 2027 budget`);
   });
-  $('#bNotes').addEventListener('input', e => { B.notes = e.target.value; persist(); drawSummary(); });
-  $('#bReset').addEventListener('click', () => { if (confirmInline('Reset the 2027 budget to the default 2026 target list? Your edits will be cleared.')) { LS.del(BKEY); route(); } });
+  // prefill category when an existing org is chosen in the Add dialog (registered once)
+  if (!window.__tlfAddHook) { window.__tlfAddHook = true; document.addEventListener('input', e => {
+    if (e.target && e.target.id === 'aName') { const o = M.orgs[e.target.value.trim()]; if (o) { const c = $('#aCat'), g = $('#aGrp'); if (c) c.value = CATS.includes(o.cat) ? o.cat : ''; if (g) g.value = o.target ? o.tgrp : (o.grp || 'Other'); } }
+  }); }
+  $('#bNotes').addEventListener('input', e => { B.notes = e.target.value; persist(); });
+
+  /* ----- Draft menu ----- */
+  const menu = $('#bDraftMenu'), mBtn = $('#bDraftBtn');
+  const closeMenu = () => { menu.hidden = true; mBtn.setAttribute('aria-expanded', 'false'); };
+  mBtn.addEventListener('click', e => { e.stopPropagation(); menu.hidden = !menu.hidden; mBtn.setAttribute('aria-expanded', String(!menu.hidden)); });
+  if (!window.__tlfMenuHook) { window.__tlfMenuHook = true; document.addEventListener('click', e => { const mn = $('#bDraftMenu'); if (mn && !mn.hidden && !mn.contains(e.target) && e.target.id !== 'bDraftBtn') { mn.hidden = true; const b = $('#bDraftBtn'); if (b) b.setAttribute('aria-expanded', 'false'); } }); }
+  $$('#bDraftMenu [data-m]').forEach(b => b.addEventListener('click', async () => {
+    closeMenu();
+    const m = b.dataset.m;
+    if (m === 'save') {
+      const payload = { app: 'tlf-budget-2027', exported: new Date().toISOString(), ...B };
+      download(new Blob([JSON.stringify(payload, null, 1)], { type: 'application/json' }), `Lunsford Foundation - 2027 Budget Draft - ${new Date().toISOString().slice(0, 10)}.json`);
+      toast('Draft file downloaded');
+    }
+    if (m === 'open') $('#bFile').click();
+    if (m === 'blank') exportBudgetChoice();
+    if (m === 'reset') {
+      const res = await modal({ title: 'Start over?', body: '<p>This clears the 2027 draft on this device — amounts, notes, added organizations and any “Move to 2027” choices — and reloads the 2026 target list.</p><p class="sec-sub">Tip: save a draft file first if you might want it back.</p>', buttons: [{ label: 'Cancel', value: null }, { label: 'Start over', cls: 'btn-primary', value: 'ok' }] });
+      if (res === 'ok') { LS.del(BKEY); route(); toast('Started a fresh 2027 budget'); }
+    }
+  }));
+  $('#bFile').addEventListener('change', async e => {
+    const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    try {
+      const draft = await readDraftFile(f);
+      const res = await modal({ title: 'Open saved draft?', body: `<p>Replace the current draft on this device with <b>${esc(f.name)}</b>?</p><p class="sec-sub">${draft.rows.filter(r => r.inc).length} organizations · 2027 total ${fmt(sum(draft.rows.filter(r => r.inc), r => r.amt || 0))}</p>`, buttons: [{ label: 'Cancel', value: null }, { label: 'Open draft', cls: 'btn-primary', value: 'ok' }] });
+      if (res !== 'ok') return;
+      draft.touched = true; saveDraft(draft); route(); toast('Draft opened');
+    } catch (err) { console.error(err); modal({ title: 'Could not open that file', body: `<p>${esc(err.message || 'The file is not a 2027 budget draft.')}</p>`, buttons: [{ label: 'OK', cls: 'btn-primary', value: null }] }); }
+  });
+
   $('#bXlsx').addEventListener('click', () => exportBudget('xlsx', B.touched ? B : null));
   $('#bPdf').addEventListener('click', () => exportBudget('pdf', B.touched ? B : null));
-  $('#bBlank').addEventListener('click', () => exportBudgetChoice());
   drawAll();
 }
-function confirmInline(msg) { return window.confirm(msg); }
+
+async function readDraftFile(f) {
+  if (/\.json$/i.test(f.name) || f.type === 'application/json') {
+    const d = normalizeDraft(JSON.parse(await f.text()));
+    if (!d) throw new Error('This file is not a 2027 budget draft.');
+    return d;
+  }
+  if (/\.xlsx$/i.test(f.name)) {
+    await loadScript(CDN.exceljs);
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(await f.arrayBuffer());
+    const hidden = wb.getWorksheet('_draft');
+    if (hidden) {
+      let txt = ''; hidden.eachRow(row => { txt += String(row.getCell(1).value || ''); });
+      const d = normalizeDraft(JSON.parse(txt)); if (d) return d;
+    }
+    // Fallback: read the visible budget sheet
+    const ws = wb.getWorksheet('2027 Target Budget') || wb.worksheets[0];
+    const head = []; let hr = 0;
+    ws.eachRow((row, i) => { if (!hr && String(row.getCell(1).value || '').trim() === 'Organization') { hr = i; row.eachCell((c, j) => head[j] = String(c.value || '').trim()); } });
+    if (!hr) throw new Error('Could not find the budget table in this Excel file.');
+    const col = n => head.indexOf(n);
+    const rows = []; let grp = 'Core';
+    ws.eachRow((row, i) => {
+      if (i <= hr) return;
+      const name = String(row.getCell(1).value || '').trim(); if (!name) return;
+      if (/^THE "BUCKET"/i.test(name)) { grp = 'Other'; return; }
+      if (/^(CORE GIVING|ADDITIONAL ORGANIZATIONS)/i.test(name)) { if (/^ADDITIONAL/i.test(name)) grp = 'New'; return; }
+      if (/^(Subtotal|TOTAL|Giving by Category|NOTES)/i.test(name)) { if (/^Giving by Category/i.test(name)) grp = 'stop'; return; }
+      if (grp === 'stop' || CATS.includes(name)) return;
+      const v = row.getCell(col('2027 Target')).value; const amt = typeof v === 'number' ? v : (v && v.result) || null;
+      const cat = String(row.getCell(2).value || '').trim();
+      rows.push({ o: name, cat: CATS.includes(cat) ? cat : (M.orgs[name] ? M.orgs[name].cat : CATS[0]), grp: grp === 'Core' ? 'Core' : 'Other', inc: true, amt, note: '', isNew: grp === 'New' || !M.orgs[name] });
+    });
+    if (!rows.length) throw new Error('No organizations were found in this Excel file.');
+    return normalizeDraft({ rows, moved: {}, notes: '', touched: true });
+  }
+  throw new Error('Choose a draft file (.json) or an exported 2027 budget (.xlsx).');
+}
+
 function exportBudgetChoice() {
   openDrawer(`<div class="d-head"><div class="eyebrow">Export</div><h2 id="drawerTitle">Blank 2027 Budget Template</h2><div class="sec-sub">The 2026 Target organizations with trailing three-year giving and 2027 commitments, a blank 2027 Target column, empty rows for new organizations and space for notes.</div></div>
     <div class="d-body"><div class="toolbar"><button class="btn btn-primary" id="tX">Download Excel template</button><button class="btn btn-gold" id="tP">Download PDF template</button></div></div>`,
@@ -1033,18 +1281,21 @@ async function getLogo() {
 }
 function budgetRowsForExport(B) {
   const template = !B;
+  const MV = template ? new Set() : movedSet(B);
   let rows;
-  if (template) rows = D.targets.map(t => ({ o: t.o, cat: t.c, grp: t.g, amt: null, note: '' }));
+  if (template) rows = D.targets.map(t => ({ o: t.o, cat: t.c, grp: t.g, amt: null, note: '', isNew: false }));
   else rows = B.rows.filter(r => r.inc).map(r => ({ ...r }));
   rows = rows.map(r => {
     const o = M.orgs[r.o];
-    return { ...r, h24: o ? o.byYear[2024] || 0 : 0, h25: o ? o.byYear[2025] || 0 : 0, h26: o ? o.byYear[2026] || 0 : 0, t26: o && o.target ? o.target : 0, com: nextCommit(r.o), cnote: commitNote(r.o) };
+    const mv = MV.has(r.o) ? unpaid26(r.o) : 0;
+    return { ...r, h24: o ? o.byYear[2024] || 0 : 0, h25: o ? o.byYear[2025] || 0 : 0, h26: o ? o.byYear[2026] || 0 : 0, t26: o && o.target ? o.target : 0, mv, com: nextCommit(r.o, MV), cnote: [mv ? 'Deferred from 2026' : '', commitNote(r.o, MV)].filter(Boolean).join(' · ') };
   });
   const order = (a, b) => (b.amt || 0) - (a.amt || 0) || b.t26 - a.t26 || b.com - a.com || a.o.localeCompare(b.o);
   return {
-    template,
-    core: rows.filter(r => r.grp === 'Core').sort(order),
-    bucket: rows.filter(r => r.grp !== 'Core').sort(order),
+    template, MV, draft: B,
+    core: rows.filter(r => r.grp === 'Core' && !r.isNew).sort(order),
+    bucket: rows.filter(r => r.grp !== 'Core' && !r.isNew).sort(order),
+    added: rows.filter(r => r.isNew).sort(order),
     blanks: template ? 10 : 5,
     notes: B ? B.notes : ''
   };
@@ -1063,96 +1314,100 @@ function download(blob, name) {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
 const todayLabel = () => new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+const EXCOLS = ['Organization', 'Giving Category', '2024 Giving', '2025 Giving', '2026 YTD', '2026 Target', 'Moved from 2026', '2027 Committed', '2027 Target', 'Notes'];
+// numeric columns: 3..9 (1-based); 2027 Target = col 9; Notes = col 10
 
 async function exportXlsx(X) {
   await loadScript(CDN.exceljs);
+  const NC = EXCOLS.length, L = n => String.fromCharCode(64 + n);
   const wb = new ExcelJS.Workbook(); wb.creator = 'The Lunsford Foundation';
   const ws = wb.addWorksheet('2027 Target Budget', { views: [{ state: 'frozen', ySplit: 8, showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: .4, right: .4, top: .5, bottom: .5, header: .3, footer: .3 } } });
   const NAVYX = 'FF26343D', GOLDX = 'FF9B835D', SOFT = 'FFF1EBE0', INPUT = 'FFFFF8E7', LINEX = 'FFE7E2D8';
   const money = '$#,##0;($#,##0);"–"';
-  ws.columns = [{ width: 42 }, { width: 24 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 15 }, { width: 15 }, { width: 46 }];
+  ws.columns = [{ width: 40 }, { width: 23 }, { width: 13 }, { width: 13 }, { width: 13 }, { width: 13 }, { width: 13 }, { width: 14 }, { width: 14 }, { width: 46 }];
   try { const img = wb.addImage({ base64: await getLogo(), extension: 'png' }); ws.addImage(img, { tl: { col: 0, row: 0.2 }, ext: { width: 300, height: 55 } }); } catch (e) { }
   ws.getRow(1).height = 22; ws.getRow(2).height = 22; ws.getRow(3).height = 14;
   ws.getCell('A5').value = `${NY} Target Giving Budget`; ws.getCell('A5').font = { name: 'Georgia', size: 18, color: { argb: NAVYX } };
   ws.getCell('A6').value = (X.template ? 'Blank template — enter 2027 targets in the shaded column. ' : '') + `Prepared ${todayLabel()} · Giving history as of ${D.asOfLabel}`;
   ws.getCell('A6').font = { size: 10, italic: true, color: { argb: 'FF55606A' } };
-  const hdr = ['Organization', 'Giving Category', '2024 Giving', '2025 Giving', '2026 YTD', '2026 Target', '2027 Committed', '2027 Target', 'Notes'];
-  const hr = ws.getRow(8); hr.values = hdr; hr.height = 30;
-  hr.eachCell((c, i) => { c.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVYX } }; c.alignment = { vertical: 'middle', wrapText: true, horizontal: i >= 3 && i <= 8 ? 'right' : 'left' }; });
-  ws.autoFilter = undefined;
-  let r = 9; const subRows = [];
+  const hr = ws.getRow(8); hr.values = EXCOLS; hr.height = 30;
+  hr.eachCell((c, i) => { c.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVYX } }; c.alignment = { vertical: 'middle', wrapText: true, horizontal: i >= 3 && i <= 9 ? 'right' : 'left' }; });
+  let r = 9; const subRows = [], ranges = [];
   const border = { bottom: { style: 'hair', color: { argb: LINEX } } };
   const section = (title, list, blanks) => {
-    const t = ws.getRow(r); t.getCell(1).value = title; ws.mergeCells(r, 1, r, 9);
+    const t = ws.getRow(r); t.getCell(1).value = title; ws.mergeCells(r, 1, r, NC);
     t.getCell(1).font = { bold: true, color: { argb: NAVYX }, size: 10.5 }; t.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: SOFT } }; r++;
     const first = r;
     list.forEach(x => {
       const row = ws.getRow(r);
-      row.values = [x.o, x.cat, x.h24 || null, x.h25 || null, x.h26 || null, x.t26 || null, x.com || null, x.amt != null ? x.amt : null, [x.note, x.cnote].filter(Boolean).join(' · ') || null];
-      row.eachCell({ includeEmpty: true }, (c, i) => { if (i <= 9) c.border = border; if (i >= 3 && i <= 8) c.numFmt = money; c.font = { size: 10 }; });
-      row.getCell(8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INPUT } }; row.getCell(8).font = { size: 10, bold: true };
-      row.getCell(9).font = { size: 9, color: { argb: 'FF55606A' } }; row.getCell(9).alignment = { wrapText: true, vertical: 'top' };
+      row.values = [x.o, x.cat, x.h24 || null, x.h25 || null, x.h26 || null, x.t26 || null, x.mv || null, x.com || null, x.amt != null ? x.amt : null, [x.note, x.cnote].filter(Boolean).join(' · ') || null];
+      row.eachCell({ includeEmpty: true }, (c, i) => { if (i <= NC) c.border = border; if (i >= 3 && i <= 9) c.numFmt = money; c.font = { size: 10 }; });
+      row.getCell(9).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INPUT } }; row.getCell(9).font = { size: 10, bold: true };
+      row.getCell(10).font = { size: 9, color: { argb: 'FF55606A' } }; row.getCell(10).alignment = { wrapText: true, vertical: 'top' };
       r++;
     });
     for (let k = 0; k < blanks; k++) {
       const row = ws.getRow(r);
       row.getCell(2).dataValidation = { type: 'list', allowBlank: true, formulae: ['"' + CATS.join(',') + '"'], showErrorMessage: true, errorTitle: 'Giving Category', error: 'Choose one of the four giving categories.' };
-      for (let i = 1; i <= 9; i++) { const c = row.getCell(i); c.border = border; if (i >= 3 && i <= 8) c.numFmt = money; }
-      row.getCell(8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INPUT } };
+      for (let i = 1; i <= NC; i++) { const c = row.getCell(i); c.border = border; if (i >= 3 && i <= 9) c.numFmt = money; }
+      row.getCell(9).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INPUT } };
       r++;
     }
     const last = r - 1;
     const s = ws.getRow(r); s.getCell(1).value = 'Subtotal — ' + title;
-    for (let col = 3; col <= 8; col++) { const L = String.fromCharCode(64 + col); s.getCell(col).value = last >= first ? { formula: `SUM(${L}${first}:${L}${last})` } : 0; s.getCell(col).numFmt = money; }
-    s.eachCell({ includeEmpty: true }, (c, i) => { if (i <= 9) { c.font = { bold: true, size: 10, color: { argb: NAVYX } }; c.border = { top: { style: 'thin', color: { argb: GOLDX } } }; } });
-    subRows.push(r); r += 2;
-    return [first, last];
+    for (let col = 3; col <= 9; col++) { s.getCell(col).value = last >= first ? { formula: `SUM(${L(col)}${first}:${L(col)}${last})` } : 0; s.getCell(col).numFmt = money; }
+    s.eachCell({ includeEmpty: true }, (c, i) => { if (i <= NC) { c.font = { bold: true, size: 10, color: { argb: NAVYX } }; c.border = { top: { style: 'thin', color: { argb: GOLDX } } }; } });
+    subRows.push(r); ranges.push([first, last]); r += 2;
   };
-  const ranges = [];
-  ranges.push(section('CORE GIVING', X.core, 0));
-  ranges.push(section('THE "BUCKET" — OTHER GIVING', X.bucket, 0));
-  ranges.push(section('ADDITIONAL ORGANIZATIONS (choose a Giving Category for each new organization)', [], X.blanks));
+  section('CORE GIVING', X.core, 0);
+  section('THE "BUCKET" — OTHER GIVING', X.bucket, 0);
+  section('ADDITIONAL ORGANIZATIONS (choose a Giving Category for each new organization)', X.added, X.blanks);
   const g = ws.getRow(r); g.getCell(1).value = `TOTAL ${NY} TARGET GIVING`;
-  for (let col = 3; col <= 8; col++) { const L = String.fromCharCode(64 + col); g.getCell(col).value = { formula: subRows.map(sr => `${L}${sr}`).join('+') }; g.getCell(col).numFmt = money; }
-  g.eachCell({ includeEmpty: true }, (c, i) => { if (i <= 9) { c.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVYX } }; } });
+  for (let col = 3; col <= 9; col++) { g.getCell(col).value = { formula: subRows.map(sr => `${L(col)}${sr}`).join('+') }; g.getCell(col).numFmt = money; }
+  g.eachCell({ includeEmpty: true }, (c, i) => { if (i <= NC) { c.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVYX } }; } });
   g.height = 20; r += 3;
 
-  // Division summary with SUMIF
-  const dh = ws.getRow(r); dh.values = ['Giving by Category', '', '', '', '', '2026 Target', '2027 Committed', '2027 Target'];
-  dh.eachCell((c) => { c.font = { bold: true, size: 10, color: { argb: NAVYX } }; c.border = { bottom: { style: 'thin', color: { argb: GOLDX } } }; });
+  const dh = ws.getRow(r); dh.values = ['Giving by Category', '', '', '', '', '2026 Target', 'Moved from 2026', '2027 Committed', '2027 Target'];
+  dh.eachCell(c => { c.font = { bold: true, size: 10, color: { argb: NAVYX } }; c.border = { bottom: { style: 'thin', color: { argb: GOLDX } } }; });
   r++;
-  const allRange = (L) => ranges.map(([a, b]) => b >= a ? `${L}${a}:${L}${b}` : null).filter(Boolean);
   const dFirst = r;
   CATS.forEach(c => {
     const row = ws.getRow(r); row.getCell(1).value = c;
-    [6, 7, 8].forEach(col => { const L = String.fromCharCode(64 + col); row.getCell(col).value = { formula: ranges.map(([a, b]) => b >= a ? `SUMIF(B${a}:B${b},A${r},${L}${a}:${L}${b})` : '0').join('+') }; row.getCell(col).numFmt = money; });
+    [6, 7, 8, 9].forEach(col => { row.getCell(col).value = { formula: ranges.map(([a, b]) => b >= a ? `SUMIF(B${a}:B${b},A${r},${L(col)}${a}:${L(col)}${b})` : '0').join('+') }; row.getCell(col).numFmt = money; });
     row.getCell(1).font = { size: 10 }; r++;
   });
   const tr = ws.getRow(r); tr.getCell(1).value = 'Total';
-  [6, 7, 8].forEach(col => { const L = String.fromCharCode(64 + col); tr.getCell(col).value = { formula: `SUM(${L}${dFirst}:${L}${r - 1})` }; tr.getCell(col).numFmt = money; tr.getCell(col).font = { bold: true }; });
+  [6, 7, 8, 9].forEach(col => { tr.getCell(col).value = { formula: `SUM(${L(col)}${dFirst}:${L(col)}${r - 1})` }; tr.getCell(col).numFmt = money; tr.getCell(col).font = { bold: true }; });
   tr.getCell(1).font = { bold: true }; r += 3;
 
-  // Notes block
   const nh = ws.getRow(r); nh.getCell(1).value = 'NOTES & COMMENTS'; nh.getCell(1).font = { bold: true, color: { argb: NAVYX } }; r++;
   const nStart = r;
-  ws.mergeCells(r, 1, r + 7, 9);
+  ws.mergeCells(r, 1, r + 7, NC);
   const nc = ws.getCell(r, 1); nc.value = X.notes || ''; nc.alignment = { wrapText: true, vertical: 'top' };
   nc.border = { top: { style: 'thin', color: { argb: LINEX } }, left: { style: 'thin', color: { argb: LINEX } }, bottom: { style: 'thin', color: { argb: LINEX } }, right: { style: 'thin', color: { argb: LINEX } } };
   for (let k = nStart; k <= nStart + 7; k++) ws.getRow(k).height = 18;
 
-  // Commitments sheet
+  // Commitments sheet (reflects any deferrals)
   const cs = wb.addWorksheet('Commitments', { views: [{ showGridLines: false }] });
-  cs.columns = [{ width: 36 }, { width: 22 }, { width: 14 }, { width: 13 }, { width: 13 }, { width: 13 }, { width: 13 }, { width: 13 }, { width: 40 }];
+  cs.columns = [{ width: 36 }, { width: 22 }, { width: 14 }, { width: 13 }, { width: 13 }, { width: 13 }, { width: 13 }, { width: 13 }, { width: 13 }, { width: 44 }];
   cs.getCell('A1').value = 'Annual & Multi-Year Commitments'; cs.getCell('A1').font = { name: 'Georgia', size: 16, color: { argb: NAVYX } };
-  const ch = cs.getRow(3); ch.values = ['Organization', 'Giving Category', 'Total', '2025', '2026', '2027', '2028', '2029', 'Notes'];
+  const yrs = [2025, 2026, 2027, 2028, 2029, 2030];
+  const ch = cs.getRow(3); ch.values = ['Organization', 'Giving Category', 'Total', ...yrs.map(String), 'Notes'];
   ch.eachCell(c => { c.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVYX } }; });
   let cr = 4;
   D.commitments.forEach(c => {
-    const row = cs.getRow(cr); const by = {}; c.sched.forEach(([y, a]) => by[y] = a);
-    row.values = [c.label, c.c, c.total, by[2025] || null, by[2026] || null, by[2027] || null, by[2028] || null, by[2029] || null, c.note];
-    for (let i = 3; i <= 8; i++) row.getCell(i).numFmt = money; cr++;
+    const row = cs.getRow(cr); const by = {}; effSched(c, X.MV).forEach(([y, a]) => by[y] = a);
+    row.values = [c.label, c.c, c.total, ...yrs.map(y => by[y] || null), X.MV.has(c.o) ? '2026 gift moved to 2027 — schedule shifted one year' : c.note];
+    for (let i = 3; i <= 3 + yrs.length; i++) row.getCell(i).numFmt = money; cr++;
   });
-  D.monthly.forEach(m => { const row = cs.getRow(cr); row.values = [m.o, M.orgs[m.o].cat, null, null, m.a * 12, m.a * 12, null, null, `Monthly gift ${fmt(m.a)}`]; for (let i = 3; i <= 8; i++) row.getCell(i).numFmt = money; cr++; });
+  D.monthly.forEach(m => { const row = cs.getRow(cr); row.values = [m.o, M.orgs[m.o].cat, null, null, m.a * 12, m.a * 12, null, null, null, `Monthly gift ${fmt(m.a)}`]; for (let i = 3; i <= 3 + yrs.length; i++) row.getCell(i).numFmt = money; cr++; });
+
+  // Hidden copy of the draft so this file can be reopened in the dashboard
+  if (X.draft) {
+    const hs = wb.addWorksheet('_draft', { state: 'veryHidden' });
+    const json = JSON.stringify({ app: 'tlf-budget-2027', ...X.draft });
+    for (let i = 0, k = 1; i < json.length; i += 30000, k++) hs.getCell(k, 1).value = json.slice(i, i + 30000);
+  }
 
   const buf = await wb.xlsx.writeBuffer();
   download(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), X.template ? `Lunsford Foundation - ${NY} Target Budget Template.xlsx` : `Lunsford Foundation - ${NY} Target Budget.xlsx`);
@@ -1162,7 +1417,7 @@ async function exportPdf(X) {
   await loadScript(CDN.jspdf); await loadScript(CDN.autotable);
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
-  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), mL = 36;
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), mL = 32;
   const navy = [38, 52, 61], gold = [155, 131, 93], soft = [241, 235, 224], ink2 = [85, 96, 106];
   try { doc.addImage(await getLogo(), 'PNG', mL, 24, 190, 35); } catch (e) { }
   doc.setFont('times', 'normal'); doc.setFontSize(20); doc.setTextColor(...navy);
@@ -1171,46 +1426,44 @@ async function exportPdf(X) {
   doc.text((X.template ? 'Blank template · ' : '') + `Prepared ${todayLabel()} · Giving history as of ${D.asOfLabel}`, W - mL, 58, { align: 'right' });
   doc.setDrawColor(...gold); doc.setLineWidth(.8); doc.line(mL, 70, W - mL, 70);
   const m = v => v ? fmt(v) : '';
+  const KEYS = ['h24', 'h25', 'h26', 't26', 'mv', 'com', 'amt'];
   const body = [];
   const sec = (title, list, blanks) => {
-    body.push([{ content: title, colSpan: 9, styles: { fillColor: soft, textColor: navy, fontStyle: 'bold' } }]);
-    list.forEach(x => body.push([x.o, x.cat, m(x.h24), m(x.h25), m(x.h26), m(x.t26), m(x.com), x.amt != null ? fmt(x.amt) : '', [x.note, x.cnote].filter(Boolean).join(' · ')]));
-    for (let k = 0; k < blanks; k++) body.push(['', '', '', '', '', '', '', '', '']);
-    if (list.length) body.push([{ content: 'Subtotal', colSpan: 2, styles: { fontStyle: 'bold', textColor: navy } }, ...['h24', 'h25', 'h26', 't26', 'com', 'amt'].map(k => ({ content: fmt(sum(list, x => x[k] || 0)), styles: { fontStyle: 'bold', textColor: navy } })), '']);
+    body.push([{ content: title, colSpan: 10, styles: { fillColor: soft, textColor: navy, fontStyle: 'bold' } }]);
+    list.forEach(x => body.push([x.o, x.cat, m(x.h24), m(x.h25), m(x.h26), m(x.t26), m(x.mv), m(x.com), x.amt != null ? fmt(x.amt) : '', [x.note, x.cnote].filter(Boolean).join(' · ')]));
+    for (let k = 0; k < blanks; k++) body.push(['', '', '', '', '', '', '', '', '', '']);
+    if (list.length) body.push([{ content: 'Subtotal', colSpan: 2, styles: { fontStyle: 'bold', textColor: navy } }, ...KEYS.map(k => ({ content: fmt(sum(list, x => x[k] || 0)), styles: { fontStyle: 'bold', textColor: navy } })), '']);
   };
   sec('CORE GIVING', X.core, 0);
   sec('THE "BUCKET" — OTHER GIVING', X.bucket, 0);
-  sec('ADDITIONAL ORGANIZATIONS — choose a Giving Category for each', [], X.blanks);
-  const all = [...X.core, ...X.bucket];
-  const foot = [[{ content: `TOTAL ${NY} TARGET GIVING`, colSpan: 2 }, ...['h24', 'h25', 'h26', 't26', 'com'].map(k => fmt(sum(all, x => x[k] || 0))), X.template ? '' : fmt(sum(all, x => x.amt || 0)), '']];
+  sec('ADDITIONAL ORGANIZATIONS — choose a Giving Category for each', X.added, X.blanks);
+  const all = [...X.core, ...X.bucket, ...X.added];
+  const foot = [[{ content: `TOTAL ${NY} TARGET GIVING`, colSpan: 2 }, ...KEYS.slice(0, 6).map(k => fmt(sum(all, x => x[k] || 0))), X.template ? '' : fmt(sum(all, x => x.amt || 0)), '']];
   doc.autoTable({
-    startY: 82, head: [['Organization', 'Giving Category', '2024', '2025', '2026 YTD', '2026 Target', '2027 Committed', '2027 Target', 'Notes']], body, foot,
+    startY: 82, head: [['Organization', 'Giving Category', '2024', '2025', '2026 YTD', '2026 Target', 'Moved from 2026', '2027 Committed', '2027 Target', 'Notes']], body, foot,
     theme: 'grid', showFoot: 'lastPage', margin: { left: mL, right: mL, bottom: 40 },
-    styles: { font: 'helvetica', fontSize: 7.6, cellPadding: 4, lineColor: [231, 226, 216], lineWidth: .4, textColor: [30, 42, 50], minCellHeight: 15, valign: 'middle' },
-    headStyles: { fillColor: navy, textColor: 255, fontStyle: 'bold', fontSize: 7.6 },
+    styles: { font: 'helvetica', fontSize: 7.2, cellPadding: 3.6, lineColor: [231, 226, 216], lineWidth: .4, textColor: [30, 42, 50], minCellHeight: 15, valign: 'middle' },
+    headStyles: { fillColor: navy, textColor: 255, fontStyle: 'bold', fontSize: 7.2 },
     footStyles: { fillColor: navy, textColor: 255, fontStyle: 'bold' },
-    columnStyles: { 0: { cellWidth: 150 }, 1: { cellWidth: 92 }, 2: { halign: 'right', cellWidth: 52 }, 3: { halign: 'right', cellWidth: 52 }, 4: { halign: 'right', cellWidth: 52 }, 5: { halign: 'right', cellWidth: 56 }, 6: { halign: 'right', cellWidth: 60 }, 7: { halign: 'right', cellWidth: 62, fillColor: [255, 248, 231], fontStyle: 'bold' }, 8: { cellWidth: 'auto', fontSize: 6.8, textColor: ink2 } },
-    didParseCell: d => { if ((d.section === 'head' || d.section === 'foot') && d.column.index >= 2 && d.column.index <= 7) d.cell.styles.halign = 'right'; }
+    columnStyles: { 0: { cellWidth: 138 }, 1: { cellWidth: 84 }, 2: { halign: 'right', cellWidth: 48 }, 3: { halign: 'right', cellWidth: 48 }, 4: { halign: 'right', cellWidth: 48 }, 5: { halign: 'right', cellWidth: 52 }, 6: { halign: 'right', cellWidth: 52 }, 7: { halign: 'right', cellWidth: 54 }, 8: { halign: 'right', cellWidth: 56, fillColor: [255, 248, 231], fontStyle: 'bold' }, 9: { cellWidth: 'auto', fontSize: 6.6, textColor: ink2 } },
+    didParseCell: d => { if ((d.section === 'head' || d.section === 'foot') && d.column.index >= 2 && d.column.index <= 8) d.cell.styles.halign = 'right'; }
   });
   let y = doc.lastAutoTable.finalY + 22;
   if (y > H - 200) { doc.addPage(); y = 50; }
-  // Category summary
-  const catRows = CATS.map(c => { const L = all.filter(x => x.cat === c); return [c, fmt(sum(L, x => x.t26)), fmt(sum(L, x => x.com)), X.template ? '' : fmt(sum(L, x => x.amt || 0))]; });
+  const catRows = CATS.map(c => { const L = all.filter(x => x.cat === c); return [c, fmt(sum(L, x => x.t26)), fmt(sum(L, x => x.mv)), fmt(sum(L, x => x.com)), X.template ? '' : fmt(sum(L, x => x.amt || 0))]; });
   doc.autoTable({
-    startY: y, head: [['Giving by Category', '2026 Target', '2027 Committed', '2027 Target']], body: catRows,
-    theme: 'plain', margin: { left: mL }, tableWidth: 360,
+    startY: y, head: [['Giving by Category', '2026 Target', 'Moved from 2026', '2027 Committed', '2027 Target']], body: catRows,
+    theme: 'plain', margin: { left: mL }, tableWidth: 400,
     styles: { fontSize: 8, cellPadding: 4, textColor: [30, 42, 50] }, headStyles: { textColor: navy, fontStyle: 'bold', lineWidth: { bottom: .8 }, lineColor: gold },
-    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } },
     didParseCell: d => { if (d.section === 'head' && d.column.index) d.cell.styles.halign = 'right'; }
   });
-  // Notes box
-  const nx = mL + 390, nw = W - mL - nx, ny = y;
+  const nx = mL + 420, nw = W - mL - nx, ny = y;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...navy); doc.text('NOTES & COMMENTS', nx, ny + 10);
   doc.setDrawColor(231, 226, 216); doc.setLineWidth(.5); doc.rect(nx, ny + 16, nw, 120);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(30, 42, 50);
   if (X.notes) doc.text(doc.splitTextToSize(X.notes, nw - 16), nx + 8, ny + 30);
   else { doc.setDrawColor(236, 232, 224); for (let k = 1; k <= 6; k++) doc.line(nx + 8, ny + 16 + k * 17, nx + nw - 8, ny + 16 + k * 17); }
-  // footer
   const pages = doc.getNumberOfPages();
   for (let p = 1; p <= pages; p++) {
     doc.setPage(p); doc.setFontSize(7.5); doc.setTextColor(...ink2);
