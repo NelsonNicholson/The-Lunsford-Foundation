@@ -148,7 +148,7 @@ function start(data) {
   $('#footAsOf').textContent = 'Data as of ' + D.asOfLabel;
   Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
   Chart.defaults.font.size = 12;
-  Chart.defaults.color = '#55606A';
+  Chart.defaults.color = '#3E4A54';
   Chart.defaults.borderColor = LINE;
   window.addEventListener('hashchange', route);
   route();
@@ -309,7 +309,7 @@ function renderFunds(el, rows, funds, remaining) {
         <tr><td><b>2026</b> · Available funds</td><td class="n">${fmt(funds)}</td></tr>
         <tr><td>Less: remaining to give in 2026${deferred.length ? ` <span class="sec-sub">(after ${fmt(sum(deferred, r => r.deferred))} deferred)</span>` : ''}</td><td class="n">(${fmt(remaining)})</td></tr>
         <tr class="sub"><td>${gap < 0 ? 'Additional funding needed for 2026' : 'Funds carried into 2027'}</td><td class="n" style="color:${gap < 0 ? 'var(--bad)' : 'var(--good)'}">${fmt(Math.abs(gap))}</td></tr>
-        <tr><td><b>2027</b> · ${has27 ? '2027 Target (from the 2027 budget draft)' : '2027 commitments <span class="sec-sub">(no 2027 budget amounts entered yet)</span>'}</td><td class="n">${fmt(t27)}</td></tr>
+        <tr><td><b>2027</b> · ${has27 ? '2027 Target (from the 2027 budget draft)' : '2027 commitments <span class="sec-sub">(no 2027 budget amounts entered yet)</span>'}<a href="#/budget" class="link-go">Open 2027 Budget →</a></td><td class="n">${fmt(t27)}</td></tr>
         <tr><td>Less: funds carried over from 2026</td><td class="n">(${fmt(carry)})</td></tr>
         <tr class="sub"><td>Additional funding needed for 2027</td><td class="n" style="color:${need27 > 0 ? 'var(--bad)' : 'var(--good)'}">${fmt(need27)}</td></tr>
       </tbody>

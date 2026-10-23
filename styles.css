@@ -1,7 +1,7 @@
 :root{
   --navy:#26343D; --navy-2:#344652; --gold:#9B835D; --gold-2:#B49A6E; --gold-soft:#F1EBE0;
   --bg:#F7F5F1; --surface:#FFFFFF; --surface-2:#FBFAF7;
-  --ink:#1E2A32; --ink-2:#55606A; --muted:#8A9299; --line:#E7E2D8; --line-2:#F0ECE4;
+  --ink:#1E2A32; --ink-2:#3E4A54; --muted:#5E6A74; --line:#E7E2D8; --line-2:#F0ECE4;
   --good:#2E7D5B; --good-soft:#E6F2EC; --warn:#A86A12; --warn-soft:#FBF1E0; --bad:#A63D32; --bad-soft:#F8E8E5;
   --c-evan:#2A6496; --c-cult:#C28A2C; --c-least:#2E9175; --c-comm:#B8473A; --c-angel:#8C8A84;
   --serif:"Cormorant Garamond", Georgia, "Times New Roman", serif;
@@ -392,3 +392,7 @@ textarea.notes{width:100%;min-height:110px;padding:12px;border:1px solid var(--l
 .btab-desc{padding:10px 20px;font-size:12.5px;color:var(--ink-2);border-bottom:1px solid var(--line-2);background:var(--surface)}
 .btab-desc b{color:var(--navy)}
 @media (max-width:820px){ .btabs-wrap{padding:0 10px} .btab{padding:13px 12px 11px;font-size:13.5px} .btools-hint{display:none} }
+
+/* Inline action link */
+.link-go{display:inline-flex;align-items:center;gap:4px;margin-left:8px;padding:2px 9px;border-radius:12px;background:var(--gold-soft);color:#6B5A3E;font-size:12px;font-weight:600;text-decoration:none;white-space:nowrap}
+.link-go:hover{background:var(--gold);color:#fff}
