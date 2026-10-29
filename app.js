@@ -763,7 +763,7 @@ function viewFunding(el) {
       <div class="card-pad"><h2 class="sec">Contribution Detail</h2><div class="sec-sub">Foundation sources of funds, 2009 – YTD 2026</div></div>
       <div class="tbl-wrap"><table class="tbl">
         <thead><tr><th>Year</th><th>Source</th><th>Description</th><th class="n">Amount</th></tr></thead>
-        <tbody>${fyrs.map(y => { const L = F.filter(f => f.y === y); return L.map((f, i) => `<tr><td>${i === 0 ? `<b>${y}</b>` : ''}</td><td><span class="tag ${f.t.startsWith('Real') ? 'outline' : 'gold'}">${f.t.startsWith('Real') ? 'Real estate' : 'Personal'}</span></td><td>${esc(f.p || f.d)}</td><td class="n">${fmt(f.a)}</td></tr>`).join('') + (L.length > 1 ? `<tr class="sub"><td colspan="3">${y} total</td><td class="n">${fmt(sum(L, f => f.a))}</td></tr>` : ''); }).join('')}</tbody>
+        <tbody>${fyrs.slice().reverse().filter(y => F.some(f => f.y === y)).map(y => { const L = F.filter(f => f.y === y); return L.map((f, i) => `<tr class="${i === 0 ? 'yr-start' : ''}"><td>${i === 0 ? `<b>${y}</b>` : ''}</td><td><span class="tag ${f.t.startsWith('Real') ? 'outline' : 'gold'}">${f.t.startsWith('Real') ? 'Real estate' : 'Personal'}</span></td><td>${esc(f.p || f.d)}</td><td class="n">${fmt(f.a)}</td></tr>`).join('') + (L.length > 1 ? `<tr class="sub"><td colspan="3">${y} total</td><td class="n">${fmt(sum(L, f => f.a))}</td></tr>` : ''); }).join('')}</tbody>
         <tfoot><tr><td colspan="3">Total 2009 – YTD 2026</td><td class="n">${fmt(total)}</td></tr></tfoot>
       </table></div>
     </div>
