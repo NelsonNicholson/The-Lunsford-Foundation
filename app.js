@@ -7,7 +7,7 @@
    ========================================================= */
 const CY = 2026;                 // current year
 const NY = 2027;                 // budget year
-const YEARS = [2020, 2021, 2022, 2023, 2024, 2025, 2026];
+const YEARS = Array.from({ length: 2026 - 2009 + 1 }, (_, i) => 2009 + i);
 const CATS = ['Evangelism/Discipleship', 'Culture/Public Policy', 'Least of These', 'Community/Education'];
 const HIST_CATS = [...CATS, 'Special Angel'];
 const CAT_COLOR = {
@@ -496,7 +496,7 @@ function bindTips(root) {
 /* =========================================================
    VIEW: Giving History
    ========================================================= */
-const RANGES = { all: [2020, 2026, '2020 – YTD 2026'], six: [2021, 2026, 'Past 6 years (2021–2026)'], three: [2024, 2026, 'Trailing 3 years (2024–2026)'], y2025: [2025, 2025, '2025'], y2026: [2026, 2026, 'YTD 2026'] };
+const RANGES = { all: [2009, 2026, 'All · 2009 – YTD 2026'], y2020: [2020, 2026, '2020 – YTD 2026'], three: [2024, 2026, 'Trailing 3 years (2024–2026)'], y2025: [2025, 2025, '2025'], y2026: [2026, 2026, 'YTD 2026'] };
 function viewHistory(el) {
   const [y0, y1, rlabel] = RANGES[S.histRange];
   const inR = g => g.y >= y0 && g.y <= y1;
@@ -508,8 +508,8 @@ function viewHistory(el) {
 
   el.innerHTML = `
   <div class="page-head">
-    <div><div class="eyebrow">Giving History</div><h1 class="title">Six Years of Giving</h1>
-    <p class="subtitle">All giving from The Lunsford Foundation, The Signatry DAF, personal and Holt Lunsford Holdings since 2020. Historic gifts are re-categorized into the current giving divisions.</p></div>
+    <div><div class="eyebrow">Giving History</div><h1 class="title">All Giving History</h1>
+    <p class="subtitle">All giving from The Lunsford Foundation, The Signatry DAF, personal, Holt Lunsford Holdings and Holt Lunsford Commercial since 2009. Historic gifts are re-categorized into the current giving divisions.</p></div>
     <div class="seg" id="rangeSeg">${Object.entries(RANGES).map(([k, v]) => `<button data-k="${k}" class="${S.histRange === k ? 'on' : ''}">${v[2]}</button>`).join('')}</div>
   </div>
 
@@ -577,7 +577,7 @@ function viewHistory(el) {
       </div>
       <div>
         <h3 class="sec" style="font-size:19px">Trend by Year</h3>
-        <div class="sec-sub" style="margin-bottom:8px">${esc(c)} giving, 2020 – YTD 2026</div>
+        <div class="sec-sub" style="margin-bottom:8px">${esc(c)} giving, 2009 – YTD 2026</div>
         <div class="chart-box"><canvas></canvas></div>
       </div>`;
     $$('[data-org]', box).forEach(n => n.addEventListener('click', () => openOrg(n.dataset.org)));
@@ -607,7 +607,7 @@ function viewHistory(el) {
       <ul class="rank">${top.map(([o, v], i) => `
         <li data-org="${esc(o)}"><span class="rk">${i + 1}</span>
           <div style="min-width:0"><div class="nm">${esc(o)}</div><div class="bar"><span style="width:${v[key] / max * 100}%;background:${CAT_COLOR[M.orgs[o].cat] || GOLD}"></span></div></div>
-          <div class="v">${key === 'a' ? fmt(v.a) : v.n + ' gifts'}<small>${key === 'a' ? v.n + ' gifts' : fmt(v.a)}</small></div></li>`).join('')}</ul>`;
+          <div class="v">${key === 'a' ? fmt(v.a) : v.n + ' gifts'}<small>${key === 'a' ? v.n + (v.n === 1 ? ' gift' : ' gifts') : fmt(v.a)}</small></div></li>`).join('')}</ul>`;
     $$('#metricSeg button').forEach(b => b.addEventListener('click', () => { S.histMetric = b.dataset.k; drawTop(); }));
     $$('#topCard [data-org]').forEach(n => n.addEventListener('click', () => openOrg(n.dataset.org)));
   };
@@ -616,10 +616,10 @@ function viewHistory(el) {
   // Source accounts (2023+)
   const SRC = ['The Signatry', 'The Lunsford Foundation', 'Personal', 'HLH', 'HLC'];
   const SRC_COLOR = { 'The Signatry': NAVY, 'The Lunsford Foundation': GOLD, 'Personal': '#5B8C9E', 'HLH': '#B9AE9B', 'HLC': '#7E6A8F', 'Not tracked': '#DDD8CF' };
-  const syrs = YEARS.filter(y => y >= Math.max(2023, y0) && y <= y1);
+  const syrs = YEARS.filter(y => y >= y0 && y <= y1);
   $('#srcCard').innerHTML = `
-    <div class="sec-head"><div><h2 class="sec">Gifts by Source Account</h2><div class="sec-sub">Which account each gift was paid from · tracked from 2023 forward</div></div></div>
-    ${syrs.length ? legendHTML([...SRC, 'Not tracked'].map(s => ({ label: srcLabel(s), color: SRC_COLOR[s] }))) + '<div class="chart-box"><canvas></canvas></div>' : '<p class="sec-sub">Source accounts are tracked from 2023 forward — choose a range that includes 2023–2026.</p>'}`;
+    <div class="sec-head"><div><h2 class="sec">Gifts by Source Account</h2><div class="sec-sub">Which account each gift was paid from · The Signatry DAF began in 2023</div></div></div>
+    ${syrs.length ? legendHTML([...SRC, 'Not tracked'].filter(s => D.gifts.some(g => g.y >= y0 && g.y <= y1 && (SRC.includes(g.s) ? g.s : 'Not tracked') === s)).map(s => ({ label: srcLabel(s), color: SRC_COLOR[s] }))) + '<div class="chart-box"><canvas></canvas></div>' : '<p class="sec-sub">No gifts in this range.</p>'}`;
   if (syrs.length) {
     const srcOf = g => SRC.includes(g.s) ? g.s : 'Not tracked';
     mkChart($('#srcCard canvas'), {
@@ -629,10 +629,13 @@ function viewHistory(el) {
     });
     const val = (y, s) => sum(D.gifts.filter(g => g.y === y && srcOf(g) === s), g => g.a);
     const used = [...SRC, 'Not tracked'].filter(s => syrs.some(y => val(y, s)));
-    $('#srcCard').insertAdjacentHTML('beforeend', `<div class="tbl-wrap mt"><table class="tbl" style="font-size:12.5px">
-      <thead><tr><th>Account</th>${syrs.map(y => `<th class="n">${y === CY ? 'YTD ' + y : y}</th>`).join('')}</tr></thead>
-      <tbody>${used.map(s => `<tr><td><span class="chip" style="color:var(--ink)"><span class="swatch" style="width:10px;height:10px;border-radius:2px;display:inline-block;background:${SRC_COLOR[s]}"></span>${esc(srcLabel(s))}</span></td>${syrs.map(y => `<td class="n">${fmtZ(val(y, s))}</td>`).join('')}</tr>`).join('')}</tbody>
-      <tfoot><tr><td>Total</td>${syrs.map(y => `<td class="n">${fmt(sum(D.gifts.filter(g => g.y === y), g => g.a))}</td>`).join('')}</tr></tfoot></table></div>`);
+    const SHORT = { 'The Signatry': 'Signatry', 'The Lunsford Foundation': 'TLF', Personal: 'Personal', HLH: 'HLH', HLC: 'HLC', 'Not tracked': 'Not tracked' };
+    const yt = y => sum(D.gifts.filter(g => g.y === y), g => g.a);
+    $('#srcCard').insertAdjacentHTML('beforeend', `<div class="tbl-wrap mt" style="max-height:420px;overflow:auto"><table class="tbl src-tbl" style="font-size:12.5px">
+      <thead><tr><th>Year</th>${used.map(s => `<th class="n" title="${esc(srcLabel(s))}"><span class="swatch" style="width:8px;height:8px;border-radius:2px;display:inline-block;background:${SRC_COLOR[s]};margin-right:5px"></span>${SHORT[s]}</th>`).join('')}<th class="n">Total</th></tr></thead>
+      <tbody>${syrs.slice().reverse().map(y => `<tr><td><b>${y === CY ? 'YTD ' + y : y}</b></td>${used.map(s => `<td class="n">${fmtZ(val(y, s))}</td>`).join('')}<td class="n"><b>${fmt(yt(y))}</b></td></tr>`).join('')}</tbody>
+      <tfoot><tr><td>Total</td>${used.map(s => `<td class="n">${fmt(sum(syrs, y => val(y, s)))}</td>`).join('')}<td class="n">${fmt(sum(syrs, yt))}</td></tr></tfoot></table></div>
+      <p class="sec-sub" style="margin-top:6px">TLF = The Lunsford Foundation · HLH = Holt Lunsford Holdings · HLC = Holt Lunsford Commercial</p>`);
   }
 }
 
@@ -643,7 +646,7 @@ function viewOrgs(el) {
   el.innerHTML = `
   <div class="page-head">
     <div><div class="eyebrow">Directory</div><h1 class="title">Organizations</h1>
-    <p class="subtitle">Every organization supported since 2020. Click a row for giving history, gift detail and source accounts.</p></div>
+    <p class="subtitle">Every organization supported since 2009. Click a row for its full giving history, gift detail and source accounts.</p></div>
   </div>
   <div class="card flush">
     <div class="card-pad">
@@ -655,27 +658,60 @@ function viewOrgs(el) {
       </div>
     </div>
     <div class="tbl-wrap"><table class="tbl" id="oTbl"></table></div>
-  </div>`;
-  const cols = [['name', 'Organization', false], ['cat', 'Category', false], ['y2024', '2024', true], ['y2025', '2025', true], ['y2026', 'YTD 2026', true], ['total', 'Total since 2020', true], ['n', 'Gifts', true], ['last', 'Last Gift', false]];
+  </div>
+  <p class="sec-sub mt">Organization totals exclude Special Angel matching gifts (2009–2023), which are grouped on their own line. Each organization's detail still shows every gift.</p>`;
+  const cols = [['name', 'Organization', false], ['cat', 'Category', false], ['y2024', '2024', true], ['y2025', '2025', true], ['y2026', 'YTD 2026', true], ['total', 'Total since 2009', true], ['n', 'Gifts', true], ['last', 'Last Gift', false]];
+  const stat = (o, pick) => {
+    const G = o.gifts.filter(pick); if (!G.length) return null;
+    const by = {}; G.forEach(g => by[g.y] = (by[g.y] || 0) + g.a);
+    return { o, name: o.name, y2024: by[2024] || 0, y2025: by[2025] || 0, y2026: by[2026] || 0, total: sum(G, g => g.a), n: G.length, last: G.reduce((m, g) => g.m > m ? g.m : m, '') };
+  };
   const draw = () => {
-    const q = S.orgSearch.toLowerCase();
-    let L = M.list.filter(o => o.n > 0 || o.target)
-      .filter(o => !q || o.name.toLowerCase().includes(q))
-      .filter(o => !S.orgCat || o.cat === S.orgCat || o.cats[S.orgCat])
-      .filter(o => !S.orgGrp || (o.target ? o.tgrp : o.grp) === S.orgGrp)
-      .map(o => ({ o, name: o.name, cat: o.cat, y2024: o.byYear[2024] || 0, y2025: o.byYear[2025] || 0, y2026: o.byYear[2026] || 0, total: o.total, n: o.n, last: o.last || '' }));
+    const q = S.orgSearch.toLowerCase(), cat = S.orgCat, grp = S.orgGrp;
+    const match = o => !q || o.name.toLowerCase().includes(q);
+    const grpOf = o => o.target ? o.tgrp : (o.grp || 'Other');
+    const main = [], small = [], angels = [];
+    M.list.forEach(o => {
+      if (!match(o)) return;
+      if (cat !== 'Special Angel' && (!grp || grpOf(o) === grp)) {
+        const r = stat(o, g => g.c !== 'Special Angel');
+        if (r || o.target) {
+          const row = r || { o, name: o.name, y2024: 0, y2025: 0, y2026: 0, total: 0, n: 0, last: '' };
+          row.cat = o.cat;
+          if (!cat || o.cat === cat || (r && o.gifts.some(g => g.c === cat))) (row.total >= 1000 || o.target ? main : small).push(row);
+        }
+      }
+      if ((!cat || cat === 'Special Angel') && (!grp || grp === 'Other')) {
+        const a = stat(o, g => g.c === 'Special Angel'); if (a) { a.cat = 'Special Angel'; angels.push(a); }
+      }
+    });
     const { k, d } = S.orgSort;
-    L.sort((a, b) => (typeof a[k] === 'string' ? a[k].localeCompare(b[k]) : a[k] - b[k]) * d);
-    $('#oCount').textContent = L.length + ' organizations';
+    const srt = L => L.sort((a, b) => (typeof a[k] === 'string' ? a[k].localeCompare(b[k]) : a[k] - b[k]) * d);
+    [main, small, angels].forEach(srt);
+    const openSmall = S.orgOpenSmall || (q && small.length), openAng = S.orgOpenAng || (q && angels.length) || cat === 'Special Angel';
+    const rowHTML = (r, child) => `<tr class="click ${child ? 'child' : ''}" data-org="${esc(r.name)}">
+        <td><span class="org-name">${esc(r.name)}</span> ${!child && r.o.target ? '<span class="tag gold">2026 Target</span>' : ''} ${!child && r.o.commit ? '<span class="tag outline">Commitment</span>' : ''}</td>
+        <td>${catChip(r.cat)}</td><td class="n">${fmtZ(r.y2024)}</td><td class="n">${fmtZ(r.y2025)}</td><td class="n">${fmtZ(r.y2026)}</td>
+        <td class="n"><b>${fmtZ(r.total)}</b></td><td class="n">${r.n || '—'}</td><td>${r.last ? ymLabel(r.last) : '—'}</td></tr>`;
+    const groupHTML = (key, label, sub, L, open) => L.length ? `<tr class="grp-row ${open ? 'open' : ''}" data-grp="${key}" tabindex="0" aria-expanded="${!!open}">
+        <td colspan="2"><span class="grp-caret">▸</span><span class="org-name">${label}</span><span class="grp-sub">${L.length} organization${L.length === 1 ? "" : "s"} · ${sub}</span></td>
+        <td class="n">${fmtZ(sum(L, r => r.y2024))}</td><td class="n">${fmtZ(sum(L, r => r.y2025))}</td><td class="n">${fmtZ(sum(L, r => r.y2026))}</td>
+        <td class="n"><b>${fmt(sum(L, r => r.total))}</b></td><td></td><td class="grp-hint">${open ? 'Hide' : 'Show all'}</td></tr>${open ? L.map(r => rowHTML(r, true)).join('') : ''}` : '';
+    const all = [...main, ...small, ...angels];
+    $('#oCount').textContent = `${main.length} organizations${small.length ? ` · ${small.length} under $1,000` : ''}${angels.length ? ` · Special Angel gifts to ${angels.length}` : ''}`;
     $('#oTbl').innerHTML = `
       <thead><tr>${cols.map(([key, l, n]) => `<th class="sortable ${n ? 'n' : ''}" data-k="${key}">${l}${S.orgSort.k === key ? (S.orgSort.d > 0 ? ' ↑' : ' ↓') : ''}</th>`).join('')}</tr></thead>
-      <tbody>${L.map(r => `<tr class="click" data-org="${esc(r.name)}">
-        <td><span class="org-name">${esc(r.name)}</span> ${r.o.target ? '<span class="tag gold">2026 Target</span>' : ''} ${r.o.commit ? '<span class="tag outline">Commitment</span>' : ''}</td>
-        <td>${catChip(r.cat)}</td><td class="n">${fmtZ(r.y2024)}</td><td class="n">${fmtZ(r.y2025)}</td><td class="n">${fmtZ(r.y2026)}</td>
-        <td class="n"><b>${fmtZ(r.total)}</b></td><td class="n">${r.n}</td><td>${r.last ? ymLabel(r.last) : '—'}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><td colspan="2">Total</td><td class="n">${fmt(sum(L, r => r.y2024))}</td><td class="n">${fmt(sum(L, r => r.y2025))}</td><td class="n">${fmt(sum(L, r => r.y2026))}</td><td class="n">${fmt(sum(L, r => r.total))}</td><td class="n">${sum(L, r => r.n)}</td><td></td></tr></tfoot>`;
+      <tbody>${main.map(r => rowHTML(r, false)).join('')}
+        ${groupHTML('small', 'Organizations under $1,000', 'total giving under $1,000 each', small, openSmall)}
+        ${groupHTML('ang', 'Special Angel gifts', 'employee matching incentive, 2009–2023', angels, openAng)}
+        ${!all.length ? '<tr><td colspan="8" class="sec-sub" style="text-align:center;padding:24px">No organizations match.</td></tr>' : ''}</tbody>
+      <tfoot><tr><td colspan="2">Total</td><td class="n">${fmt(sum(all, r => r.y2024))}</td><td class="n">${fmt(sum(all, r => r.y2025))}</td><td class="n">${fmt(sum(all, r => r.y2026))}</td><td class="n">${fmt(sum(all, r => r.total))}</td><td class="n">${sum(all, r => r.n).toLocaleString()}</td><td></td></tr></tfoot>`;
     $$('#oTbl th.sortable').forEach(th => th.addEventListener('click', () => { const key = th.dataset.k; S.orgSort = { k: key, d: S.orgSort.k === key ? -S.orgSort.d : (['name', 'cat'].includes(key) ? 1 : -1) }; draw(); }));
     $$('#oTbl tr[data-org]').forEach(tr => tr.addEventListener('click', () => openOrg(tr.dataset.org)));
+    $$('#oTbl tr.grp-row').forEach(tr => {
+      const tog = () => { if (tr.dataset.grp === 'small') S.orgOpenSmall = !tr.classList.contains('open'); else S.orgOpenAng = !tr.classList.contains('open'); draw(); };
+      tr.addEventListener('click', tog); tr.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tog(); } });
+    });
   };
   $('#oSearch').addEventListener('input', e => { S.orgSearch = e.target.value; draw(); });
   $('#oCat').addEventListener('change', e => { S.orgCat = e.target.value; draw(); });
@@ -691,18 +727,18 @@ function viewFunding(el) {
   const total = sum(F, f => f.a);
   const re = F.filter(f => f.t.startsWith('Real')), pe = F.filter(f => f.t.startsWith('Personal'));
   const fyrs = YEARS;
-  const giftsOut = y => sum(D.gifts.filter(g => g.y === y && g.s !== 'Personal' && g.s !== 'HLH'), g => g.a);
+  const giftsOut = y => sum(D.gifts.filter(g => g.y === y && (g.s === 'The Signatry' || g.s === 'The Lunsford Foundation')), g => g.a);
   const outTotal = sum(fyrs, giftsOut);
   el.innerHTML = `
   <div class="page-head">
     <div><div class="eyebrow">Funding Sources</div><h1 class="title">How the Foundation Is Funded</h1>
-    <p class="subtitle">Contributions into The Lunsford Foundation from 2020 – YTD 2026: real estate asset sale proceeds and personal cash donations.</p></div>
+    <p class="subtitle">Contributions into The Lunsford Foundation from 2009 – YTD 2026: real estate asset sale proceeds and personal cash donations.</p></div>
   </div>
   <div class="grid g-kpi">
-    <div class="card kpi hero"><div class="k-label">Total Funds Received</div><div class="k-val">${fmt(total)}</div><div class="k-sub">${F.length} contributions · 2020 – YTD 2026</div></div>
+    <div class="card kpi hero"><div class="k-label">Total Funds Received</div><div class="k-val">${fmt(total)}</div><div class="k-sub">${F.length} contributions · 2009 – YTD 2026</div></div>
     <div class="card kpi"><div class="k-label">Real Estate Sale Proceeds</div><div class="k-val">${fmt(sum(re, f => f.a))}</div><div class="k-sub">${pct(sum(re, f => f.a), total)}% · ${re.length} asset sales</div><div class="bar"><span style="width:${pct(sum(re, f => f.a), total)}%;background:${NAVY}"></span></div></div>
     <div class="card kpi"><div class="k-label">Personal Cash Donations</div><div class="k-val">${fmt(sum(pe, f => f.a))}</div><div class="k-sub">${pct(sum(pe, f => f.a), total)}% · ${pe.length} years</div><div class="bar"><span style="width:${pct(sum(pe, f => f.a), total)}%"></span></div></div>
-    <div class="card kpi"><div class="k-label">Granted from Foundation Accounts</div><div class="k-val">${fmt(outTotal)}</div><div class="k-sub">Gifts via The Signatry &amp; TLF, 2020 – YTD 2026</div></div>
+    <div class="card kpi"><div class="k-label">Granted from Foundation Accounts</div><div class="k-val">${fmt(outTotal)}</div><div class="k-sub">Gifts via The Signatry &amp; TLF, 2009 – YTD 2026</div></div>
   </div>
 
   <div class="grid g-2 mt">
@@ -724,11 +760,11 @@ function viewFunding(el) {
       <ul class="rank">${(() => { const by = {}; re.forEach(f => { const b = by[f.p] || (by[f.p] = { a: 0, ys: [] }); b.a += f.a; b.ys.push(f.y); }); const L = Object.entries(by).sort((a, b) => b[1].a - a[1].a); const mx = L[0][1].a; return L.map(([p, v], i) => `<li style="cursor:default"><span class="rk">${i + 1}</span><div style="min-width:0"><div class="nm">${esc(p)}</div><div class="bar"><span style="width:${v.a / mx * 100}%;background:${NAVY}"></span></div></div><div class="v">${fmt(v.a)}<small>${[...new Set(v.ys)].join(', ')}</small></div></li>`).join(''); })()}</ul>
     </div>
     <div class="card flush">
-      <div class="card-pad"><h2 class="sec">Contribution Detail</h2><div class="sec-sub">Foundation sources of funds, 2020 – YTD 2026</div></div>
+      <div class="card-pad"><h2 class="sec">Contribution Detail</h2><div class="sec-sub">Foundation sources of funds, 2009 – YTD 2026</div></div>
       <div class="tbl-wrap"><table class="tbl">
         <thead><tr><th>Year</th><th>Source</th><th>Description</th><th class="n">Amount</th></tr></thead>
-        <tbody>${fyrs.map(y => { const L = F.filter(f => f.y === y); return L.map((f, i) => `<tr><td>${i === 0 ? `<b>${y}</b>` : ''}</td><td><span class="tag ${f.t.startsWith('Real') ? 'outline' : 'gold'}">${f.t.startsWith('Real') ? 'Real estate' : 'Personal'}</span></td><td>${esc(f.p || f.d)}</td><td class="n">${fmt(f.a)}</td></tr>`).join('') + `<tr class="sub"><td colspan="3">${y} total</td><td class="n">${fmt(sum(L, f => f.a))}</td></tr>`; }).join('')}</tbody>
-        <tfoot><tr><td colspan="3">Total 2020 – YTD 2026</td><td class="n">${fmt(total)}</td></tr></tfoot>
+        <tbody>${fyrs.map(y => { const L = F.filter(f => f.y === y); return L.map((f, i) => `<tr><td>${i === 0 ? `<b>${y}</b>` : ''}</td><td><span class="tag ${f.t.startsWith('Real') ? 'outline' : 'gold'}">${f.t.startsWith('Real') ? 'Real estate' : 'Personal'}</span></td><td>${esc(f.p || f.d)}</td><td class="n">${fmt(f.a)}</td></tr>`).join('') + (L.length > 1 ? `<tr class="sub"><td colspan="3">${y} total</td><td class="n">${fmt(sum(L, f => f.a))}</td></tr>` : ''); }).join('')}</tbody>
+        <tfoot><tr><td colspan="3">Total 2009 – YTD 2026</td><td class="n">${fmt(total)}</td></tr></tfoot>
       </table></div>
     </div>
   </div>`;
@@ -788,7 +824,7 @@ function openOrg(name) {
     </div>
     <div class="d-body">
       <div class="d-stats">
-        <div class="d-stat"><div class="l">Total since 2020</div><div class="v">${fmt(o.total)}</div><div class="s">${o.n} gift${o.n === 1 ? '' : 's'}</div></div>
+        <div class="d-stat"><div class="l">Total since 2009</div><div class="v">${fmt(o.total)}</div><div class="s">${o.n} gift${o.n === 1 ? '' : 's'}</div></div>
         <div class="d-stat"><div class="l">2026 Target</div><div class="v">${o.target ? fmt(o.target) : '—'}</div><div class="s">${o.target ? (act26 >= o.target ? '✓ Completed' : fmt(o.target - act26) + ' remaining') : 'Not in 2026 plan'}</div></div>
         <div class="d-stat"><div class="l">YTD 2026</div><div class="v">${fmt(act26)}</div><div class="s">2025: ${fmt(o.byYear[2025] || 0)}</div></div>
         <div class="d-stat"><div class="l">First / Last Gift</div><div class="v" style="font-size:17px;margin-top:8px">${o.first ? ymLabel(o.first) : '—'}</div><div class="s">${o.last ? 'Last: ' + ymLabel(o.last) : 'No gifts yet'}</div></div>
@@ -805,7 +841,7 @@ function openOrg(name) {
 
       <div class="card mt">
         <h3 class="sec" style="font-size:18px">Source Accounts</h3>
-        <div class="sec-sub" style="margin-bottom:10px">Where gifts were paid from (account detail tracked from 2023)</div>
+        <div class="sec-sub" style="margin-bottom:10px">Where gifts were paid from</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">${Object.entries(srcTot).sort((a, b) => b[1] - a[1]).map(([s, a]) => `<span class="tag outline" style="padding:5px 10px">${esc(srcNice(s))} · <b style="color:var(--ink)">${fmt(a)}</b></span>`).join('')}</div>
       </div>
 
@@ -894,8 +930,10 @@ function defaultBudget() {
 }
 function normalizeDraft(b) {
   if (!b || !Array.isArray(b.rows)) return null;
-  b.rows = b.rows.filter(r => r && r.o).map(r => ({ o: String(r.o), cat: CATS.includes(r.cat) ? r.cat : (M.orgs[r.o] ? M.orgs[r.o].cat : CATS[0]), grp: r.grp === 'Core' ? 'Core' : 'Other', inc: r.inc !== false, amt: (typeof r.amt === 'number' && isFinite(r.amt)) ? Math.round(r.amt) : null, note: String(r.note || ''), isNew: !!r.isNew }));
+  const REN = { 'East-West Ministries International': 'East-West Ministries' };
+  b.rows = b.rows.filter(r => r && r.o).map(r => ({ o: REN[r.o] || String(r.o), cat: CATS.includes(r.cat) ? r.cat : (M.orgs[r.o] ? M.orgs[r.o].cat : CATS[0]), grp: r.grp === 'Core' ? 'Core' : 'Other', inc: r.inc !== false, amt: (typeof r.amt === 'number' && isFinite(r.amt)) ? Math.round(r.amt) : null, note: String(r.note || ''), isNew: !!r.isNew }));
   b.moved = b.moved && typeof b.moved === 'object' ? b.moved : {};
+  Object.keys(REN).forEach(k => { if (b.moved[k]) { b.moved[REN[k]] = b.moved[k]; delete b.moved[k]; } });
   b.notes = String(b.notes || ''); b.touched = !!b.touched; b.v = 2;
   return b;
 }
@@ -1156,7 +1194,7 @@ function viewBudget(el) {
   });
   $('#bAdd').addEventListener('click', async () => {
     const have = new Set(B.rows.map(r => r.o));
-    const opts = M.list.filter(o => !have.has(o.name) && o.n).sort((a, b) => b.total - a.total).map(o => `<option value="${esc(o.name)}">${esc(o.cat)} · ${fmtK(o.total)} since 2020</option>`).join('');
+    const opts = M.list.filter(o => !have.has(o.name) && o.n).sort((a, b) => b.total - a.total).map(o => `<option value="${esc(o.name)}">${esc(o.cat)} · ${fmtK(o.total)} since 2009</option>`).join('');
     const res = await modal({
       title: 'Add an Organization',
       body: `<div class="m-form">
