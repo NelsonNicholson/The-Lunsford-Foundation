@@ -429,3 +429,7 @@ textarea.notes{width:100%;min-height:110px;padding:12px;border:1px solid var(--l
 .src-tbl th{letter-spacing:.02em;font-size:10.5px;padding-left:4px;padding-right:6px}
 .src-tbl td{padding-left:4px;padding-right:6px}
 .src-tbl th:first-child,.src-tbl td:first-child{width:70px}
+/* Five-card KPI row: keep labels, values and subtext on the same lines across cards */
+.g-kpi5 .kpi{display:flex;flex-direction:column}
+.g-kpi5 .kpi .k-label{min-height:2.9em;line-height:1.45;display:flex;align-items:flex-start}
+.g-kpi5 .kpi .k-val,.g-kpi5 .kpi .k-val[style]{height:40px;min-height:40px!important;margin-top:6px;display:flex;align-items:center;line-height:1}
