@@ -555,17 +555,19 @@ function viewHistory(el) {
   $$('#catCards .cat-card').forEach(c => c.addEventListener('click', () => { S.histCat = c.dataset.c; $$('#catCards .cat-card').forEach(x => x.classList.toggle('on', x === c)); drawCatDetail(); }));
 
   // Annual stacked by category
-  const arcYrs = ARC.map(x => x.y);
-  const yrs = [...arcYrs, ...YEARS.filter(y => y >= y0 && y <= y1)];
-  const isArc = y => arcYrs.includes(y);
+  // Pre-Foundation years are grouped into a single bar
+  const PFKEY = 'PF';
+  const pfLabel = ARC.length ? `${ARC[0].y}–${ARC[ARC.length - 1].y}` : '';
+  const yrs = [...(ARC.length ? [PFKEY] : []), ...YEARS.filter(y => y >= y0 && y <= y1)];
+  const isArc = y => y === PFKEY;
   $('#annualCard').innerHTML = `
     <div class="sec-head"><div><h2 class="sec">Annual Giving by Category</h2><div class="sec-sub">Click a bar segment to open that category's organizations for the year${yrs.includes(CY) ? ' · 2026 is year-to-date' : ''}</div></div></div>
     ${legendHTML([...HIST_CATS, ...(ARC.length ? [PF] : [])].map(c => ({ label: c === PF ? 'Pre-Foundation (1984–2008, not categorized)' : c, color: CAT_COLOR[c] })))}
-    <div class="chart-box tall"><canvas></canvas></div>${ARC.length ? '<p class="sec-sub" style="margin-top:6px">Years with no records provided (1987–1990, 1992) are not shown.</p>' : ''}`;
+    <div class="chart-box tall"><canvas></canvas></div>${ARC.length ? `<p class="sec-sub" style="margin-top:6px">${pfLabel} is shown as one combined Pre-Foundation bar — select the Pre-Foundation card below for year-by-year amounts.</p>` : ''}`;
   mkChart($('#annualCard canvas'), {
     type: 'bar',
-    data: { labels: yrs.map(y => y === CY ? 'YTD ' + y : String(y)), datasets: [...HIST_CATS.map(c => ({ label: c, data: yrs.map(y => isArc(y) ? 0 : sum(D.gifts.filter(g => g.y === y && g.c === c), g => g.a)), backgroundColor: CAT_COLOR[c], borderColor: '#fff', borderWidth: { top: 2 }, borderSkipped: 'bottom', maxBarThickness: 64 })),
-        ...(ARC.length ? [{ label: PF, data: yrs.map(y => isArc(y) ? ARC.find(x => x.y === y).a : 0), backgroundColor: CAT_COLOR[PF], borderRadius: { topLeft: 3, topRight: 3 }, borderSkipped: 'bottom', maxBarThickness: 64 }] : [])] },
+    data: { labels: yrs.map(y => isArc(y) ? pfLabel : y === CY ? 'YTD ' + y : String(y)), datasets: [...HIST_CATS.map(c => ({ label: c, data: yrs.map(y => isArc(y) ? 0 : sum(D.gifts.filter(g => g.y === y && g.c === c), g => g.a)), backgroundColor: CAT_COLOR[c], borderColor: '#fff', borderWidth: { top: 2 }, borderSkipped: 'bottom', maxBarThickness: 64 })),
+        ...(ARC.length ? [{ label: PF, data: yrs.map(y => isArc(y) ? arcTot : 0), backgroundColor: CAT_COLOR[PF], borderRadius: { topLeft: 3, topRight: 3 }, borderSkipped: 'bottom', maxBarThickness: 64 }] : [])] },
     options: {
       maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: tooltipCfg({ mode: 'index', intersect: false, filter: i => i.parsed.y > 0, footer: items => 'Total: ' + fmt(sum(items, i => i.parsed.y)) }) },
@@ -583,7 +585,7 @@ function viewHistory(el) {
       box.innerHTML = `
         <div>
           <h3 class="sec" style="font-size:19px;display:flex;gap:8px;align-items:center">${catDot(PF)}Pre-Foundation Giving</h3>
-          <div class="sec-sub" style="margin-bottom:8px">Holt &amp; Kaye Dawn · ${ARC.length} years · ${fmt(arcTot)} · annual totals only, source and organizations not recorded</div>
+          <div class="sec-sub" style="margin-bottom:8px">Holt &amp; Kaye Dawn · ${ARC.length} years · ${fmt(arcTot)} · annual totals only, source and organizations not recorded · no records provided for 1987–1990 or 1992</div>
           <ul class="rank" style="max-height:360px;overflow:auto">${ARC.slice().reverse().map(x => `
             <li style="cursor:default"><span class="rk" style="font-size:14px;width:auto">${x.y}</span><div style="min-width:0"><div class="bar" style="margin-top:0"><span style="width:${x.a / mx * 100}%;background:${CAT_COLOR[PF]}"></span></div></div><div class="v">${fmt(x.a)}</div></li>`).join('')}</ul>
         </div>
