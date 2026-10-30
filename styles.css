@@ -412,3 +412,6 @@ textarea.notes{width:100%;min-height:110px;padding:12px;border:1px solid var(--l
 .src-tbl th:first-child,.src-tbl td:first-child{padding-left:4px}
 
 .tbl tr.yr-start td{border-top:1.5px solid var(--line)}
+
+.cat-cards{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+.src-tbl thead th{position:sticky;top:0;z-index:1;background:var(--surface)}

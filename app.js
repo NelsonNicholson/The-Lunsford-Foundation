@@ -15,7 +15,8 @@ const CAT_COLOR = {
   'Culture/Public Policy': '#C28A2C',
   'Least of These': '#2E9175',
   'Community/Education': '#B8473A',
-  'Special Angel': '#8C8A84'
+  'Special Angel': '#8C8A84',
+  'Pre-Foundation': '#A9B4BC'
 };
 const NAVY = '#26343D', GOLD = '#9B835D', GOLD_LIGHT = '#D9CBB2', MUTED = '#8A9299', LINE = '#EFEBE3';
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -496,25 +497,29 @@ function bindTips(root) {
 /* =========================================================
    VIEW: Giving History
    ========================================================= */
-const RANGES = { all: [2009, 2026, 'All · 2009 – YTD 2026'], y2020: [2020, 2026, '2020 – YTD 2026'], three: [2024, 2026, 'Trailing 3 years (2024–2026)'], y2025: [2025, 2025, '2025'], y2026: [2026, 2026, 'YTD 2026'] };
+const RANGES = { all: [1984, 2026, 'All · 1984 – YTD 2026'], y2009: [2009, 2026, '2009 – YTD 2026'], three: [2024, 2026, 'Trailing 3 years (2024–2026)'], y2025: [2025, 2025, '2025'], y2026: [2026, 2026, 'YTD 2026'] };
 function viewHistory(el) {
   const [y0, y1, rlabel] = RANGES[S.histRange];
   const inR = g => g.y >= y0 && g.y <= y1;
+  if (!RANGES[S.histRange]) S.histRange = 'all';
   const G = D.gifts.filter(inR);
-  const total = sum(G, g => g.a);
+  const ARC = (D.archive || []).filter(x => x.y >= y0 && x.y <= y1);
+  const arcTot = sum(ARC, x => x.a);
+  const total = sum(G, g => g.a) + arcTot;
+  const PF = 'Pre-Foundation';
   const catTot = HIST_CATS.map(c => ({ c, a: sum(G.filter(g => g.c === c), g => g.a), n: G.filter(g => g.c === c).length, orgs: new Set(G.filter(g => g.c === c).map(g => g.o)).size }));
   const main = [...catTot].sort((a, b) => b.a - a.a)[0];
-  if (!S.histCat) S.histCat = main.c;
+  if (!S.histCat || (S.histCat === PF && !ARC.length)) S.histCat = main.c;
 
   el.innerHTML = `
   <div class="page-head">
     <div><div class="eyebrow">Giving History</div><h1 class="title">All Giving History</h1>
-    <p class="subtitle">All giving from The Lunsford Foundation, The Signatry DAF, personal, Holt Lunsford Holdings and Holt Lunsford Commercial since 2009. Historic gifts are re-categorized into the current giving divisions.</p></div>
+    <p class="subtitle">All giving from The Lunsford Foundation, The Signatry DAF, personal, Holt Lunsford Holdings and Holt Lunsford Commercial since 2009, re-categorized into the current giving divisions — plus Holt &amp; Kaye Dawn's Pre-Foundation giving from 1984–2008 (annual totals only).</p></div>
     <div class="seg" id="rangeSeg">${Object.entries(RANGES).map(([k, v]) => `<button data-k="${k}" class="${S.histRange === k ? 'on' : ''}">${v[2]}</button>`).join('')}</div>
   </div>
 
   <div class="grid g-kpi">
-    <div class="card kpi hero"><div class="k-label">Total Giving · ${esc(rlabel)}</div><div class="k-val">${fmt(total)}</div><div class="k-sub">${G.length.toLocaleString()} gifts to ${new Set(G.map(g => g.o)).size} organizations</div></div>
+    <div class="card kpi hero"><div class="k-label">Total Giving · ${esc(rlabel)}</div><div class="k-val">${fmt(total)}</div><div class="k-sub">${G.length.toLocaleString()} gifts to ${new Set(G.map(g => g.o)).size} organizations${arcTot ? `<br>Includes ${fmtK(arcTot)} Pre-Foundation giving (${ARC[0].y}–${ARC[ARC.length - 1].y})` : ''}</div></div>
     <div class="card kpi"><div class="k-label">Main Giving Category</div><div class="k-val" style="font-size:26px;display:flex;align-items:center;gap:10px;min-height:42px">${catDot(main.c)}${esc(main.c)}</div><div class="k-sub">${fmt(main.a)} · ${pct(main.a, total)}% of giving</div></div>
     <div class="card kpi"><div class="k-label">Core Giving</div><div class="k-val">${fmt(sum(G.filter(g => g.g === 'Core'), g => g.a))}</div><div class="k-sub">${pct(sum(G.filter(g => g.g === 'Core'), g => g.a), total)}% of total</div></div>
     <div class="card kpi"><div class="k-label">The "Bucket" (Other Giving)</div><div class="k-val">${fmt(sum(G.filter(g => g.g === 'Other'), g => g.a))}</div><div class="k-sub">${pct(sum(G.filter(g => g.g === 'Other'), g => g.a), total)}% of total</div></div>
@@ -531,7 +536,13 @@ function viewHistory(el) {
         <div class="cn">${esc(c.c)}</div>
         <div class="cv">${fmtK(c.a)}</div>
         <div class="cs">${pct(c.a, total)}% · ${c.n} gifts · ${c.orgs} orgs</div>
-      </div>`).join('')}</div>
+      </div>`).join('')}${ARC.length ? `
+      <div class="cat-card ${S.histCat === PF ? 'on' : ''}" data-c="${PF}">
+        <span class="stripe" style="background:${CAT_COLOR[PF]}"></span><span class="badge tag muted">Historic</span>
+        <div class="cn">Pre-Foundation</div>
+        <div class="cv">${fmtK(arcTot)}</div>
+        <div class="cs">${pct(arcTot, total)}% · ${ARC.length} years · ${ARC[0].y}–${ARC[ARC.length - 1].y}</div>
+      </div>` : ''}</div>
     <div class="grid g-2-3 mt" id="catDetail"></div>
   </div>
 
@@ -544,25 +555,50 @@ function viewHistory(el) {
   $$('#catCards .cat-card').forEach(c => c.addEventListener('click', () => { S.histCat = c.dataset.c; $$('#catCards .cat-card').forEach(x => x.classList.toggle('on', x === c)); drawCatDetail(); }));
 
   // Annual stacked by category
-  const yrs = YEARS.filter(y => y >= y0 && y <= y1);
+  const arcYrs = ARC.map(x => x.y);
+  const yrs = [...arcYrs, ...YEARS.filter(y => y >= y0 && y <= y1)];
+  const isArc = y => arcYrs.includes(y);
   $('#annualCard').innerHTML = `
     <div class="sec-head"><div><h2 class="sec">Annual Giving by Category</h2><div class="sec-sub">Click a bar segment to open that category's organizations for the year${yrs.includes(CY) ? ' · 2026 is year-to-date' : ''}</div></div></div>
-    ${legendHTML(HIST_CATS.map(c => ({ label: c, color: CAT_COLOR[c] })))}
-    <div class="chart-box tall"><canvas></canvas></div>`;
+    ${legendHTML([...HIST_CATS, ...(ARC.length ? [PF] : [])].map(c => ({ label: c === PF ? 'Pre-Foundation (1984–2008, not categorized)' : c, color: CAT_COLOR[c] })))}
+    <div class="chart-box tall"><canvas></canvas></div>${ARC.length ? '<p class="sec-sub" style="margin-top:6px">Years with no records provided (1987–1990, 1992) are not shown.</p>' : ''}`;
   mkChart($('#annualCard canvas'), {
     type: 'bar',
-    data: { labels: yrs.map(y => y === CY ? 'YTD ' + y : String(y)), datasets: HIST_CATS.map(c => ({ label: c, data: yrs.map(y => sum(D.gifts.filter(g => g.y === y && g.c === c), g => g.a)), backgroundColor: CAT_COLOR[c], borderColor: '#fff', borderWidth: { top: 2 }, borderSkipped: 'bottom', maxBarThickness: 64 })) },
+    data: { labels: yrs.map(y => y === CY ? 'YTD ' + y : String(y)), datasets: [...HIST_CATS.map(c => ({ label: c, data: yrs.map(y => isArc(y) ? 0 : sum(D.gifts.filter(g => g.y === y && g.c === c), g => g.a)), backgroundColor: CAT_COLOR[c], borderColor: '#fff', borderWidth: { top: 2 }, borderSkipped: 'bottom', maxBarThickness: 64 })),
+        ...(ARC.length ? [{ label: PF, data: yrs.map(y => isArc(y) ? ARC.find(x => x.y === y).a : 0), backgroundColor: CAT_COLOR[PF], borderRadius: { topLeft: 3, topRight: 3 }, borderSkipped: 'bottom', maxBarThickness: 64 }] : [])] },
     options: {
       maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: tooltipCfg({ mode: 'index', intersect: false, filter: i => i.parsed.y > 0, footer: items => 'Total: ' + fmt(sum(items, i => i.parsed.y)) }) },
       scales: { x: catAxis({ stacked: true }), y: moneyAxis({ stacked: true }) },
-      onClick: (e, els) => { if (els.length) openCategory(HIST_CATS[els[0].datasetIndex], yrs[els[0].index]); },
+      onClick: (e, els) => { if (!els.length) return; const y = yrs[els[0].index]; if (isArc(y)) { S.histCat = PF; $$('#catCards .cat-card').forEach(x => x.classList.toggle('on', x.dataset.c === PF)); drawCatDetail(); $('#catDetail').scrollIntoView({ behavior: 'smooth', block: 'center' }); } else openCategory(HIST_CATS[els[0].datasetIndex], y); },
       onHover: (e, els) => e.native.target.style.cursor = els.length ? 'pointer' : 'default'
     }
   });
 
   function drawCatDetail() {
     const c = S.histCat;
+    if (c === PF) {
+      const mx = Math.max(...ARC.map(x => x.a));
+      const box = $('#catDetail');
+      box.innerHTML = `
+        <div>
+          <h3 class="sec" style="font-size:19px;display:flex;gap:8px;align-items:center">${catDot(PF)}Pre-Foundation Giving</h3>
+          <div class="sec-sub" style="margin-bottom:8px">Holt &amp; Kaye Dawn · ${ARC.length} years · ${fmt(arcTot)} · annual totals only, source and organizations not recorded</div>
+          <ul class="rank" style="max-height:360px;overflow:auto">${ARC.slice().reverse().map(x => `
+            <li style="cursor:default"><span class="rk" style="font-size:14px;width:auto">${x.y}</span><div style="min-width:0"><div class="bar" style="margin-top:0"><span style="width:${x.a / mx * 100}%;background:${CAT_COLOR[PF]}"></span></div></div><div class="v">${fmt(x.a)}</div></li>`).join('')}</ul>
+        </div>
+        <div>
+          <h3 class="sec" style="font-size:19px">Trend by Year</h3>
+          <div class="sec-sub" style="margin-bottom:8px">Pre-Foundation giving, ${ARC[0].y} – ${ARC[ARC.length - 1].y}</div>
+          <div class="chart-box"><canvas></canvas></div>
+        </div>`;
+      const idx = charts.findIndex(ch => ch.canvas && ch.canvas.dataset.role === 'catTrend');
+      if (idx >= 0) { charts[idx].destroy(); charts.splice(idx, 1); }
+      const cv = $('canvas', box); cv.dataset.role = 'catTrend';
+      mkChart(cv, { type: 'bar', data: { labels: ARC.map(x => String(x.y)), datasets: [{ label: 'Pre-Foundation', data: ARC.map(x => x.a), backgroundColor: CAT_COLOR[PF], borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: 'bottom', maxBarThickness: 48 }] },
+        options: { maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: tooltipCfg() }, scales: { x: catAxis(), y: moneyAxis() } } });
+      return;
+    }
     const cg = G.filter(g => g.c === c);
     const byOrg = {}; cg.forEach(g => byOrg[g.o] = (byOrg[g.o] || 0) + g.a);
     const top = Object.entries(byOrg).sort((a, b) => b[1] - a[1]);
@@ -633,8 +669,9 @@ function viewHistory(el) {
     const yt = y => sum(D.gifts.filter(g => g.y === y), g => g.a);
     $('#srcCard').insertAdjacentHTML('beforeend', `<div class="tbl-wrap mt" style="max-height:420px;overflow:auto"><table class="tbl src-tbl" style="font-size:12.5px">
       <thead><tr><th>Year</th>${used.map(s => `<th class="n" title="${esc(srcLabel(s))}"><span class="swatch" style="width:8px;height:8px;border-radius:2px;display:inline-block;background:${SRC_COLOR[s]};margin-right:5px"></span>${SHORT[s]}</th>`).join('')}<th class="n">Total</th></tr></thead>
-      <tbody>${syrs.slice().reverse().map(y => `<tr><td><b>${y === CY ? 'YTD ' + y : y}</b></td>${used.map(s => `<td class="n">${fmtZ(val(y, s))}</td>`).join('')}<td class="n"><b>${fmt(yt(y))}</b></td></tr>`).join('')}</tbody>
-      <tfoot><tr><td>Total</td>${used.map(s => `<td class="n">${fmt(sum(syrs, y => val(y, s)))}</td>`).join('')}<td class="n">${fmt(sum(syrs, yt))}</td></tr></tfoot></table></div>
+      <tbody>${syrs.slice().reverse().map(y => `<tr><td><b>${y === CY ? 'YTD ' + y : y}</b></td>${used.map(s => `<td class="n">${fmtZ(val(y, s))}</td>`).join('')}<td class="n"><b>${fmt(yt(y))}</b></td></tr>`).join('')}
+        ${ARC.length ? `<tr class="sub"><td colspan="${used.length + 2}">Pre-Foundation giving · Holt &amp; Kaye Dawn (source not recorded)</td></tr>` + ARC.slice().reverse().map(x => `<tr><td><b>${x.y}</b></td>${used.map(() => '<td></td>').join('')}<td class="n"><b>${fmt(x.a)}</b></td></tr>`).join('') : ''}</tbody>
+      <tfoot><tr><td>Total</td>${used.map(s => `<td class="n">${fmt(sum(syrs, y => val(y, s)))}</td>`).join('')}<td class="n">${fmt(sum(syrs, yt) + arcTot)}</td></tr></tfoot></table></div>
       <p class="sec-sub" style="margin-top:6px">TLF = The Lunsford Foundation · HLH = Holt Lunsford Holdings · HLC = Holt Lunsford Commercial</p>`);
   }
 }
