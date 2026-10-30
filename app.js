@@ -518,11 +518,12 @@ function viewHistory(el) {
     <div class="seg" id="rangeSeg">${Object.entries(RANGES).map(([k, v]) => `<button data-k="${k}" class="${S.histRange === k ? 'on' : ''}">${v[2]}</button>`).join('')}</div>
   </div>
 
-  <div class="grid g-kpi">
-    <div class="card kpi hero"><div class="k-label">Total Giving · ${esc(rlabel)}</div><div class="k-val">${fmt(total)}</div><div class="k-sub">${G.length.toLocaleString()} gifts to ${new Set(G.map(g => g.o)).size} organizations${arcTot ? `<br>Includes ${fmtK(arcTot)} Pre-Foundation giving (${ARC[0].y}–${ARC[ARC.length - 1].y})` : ''}</div></div>
+  <div class="grid g-kpi ${arcTot ? 'g-kpi5' : ''}">
+    <div class="card kpi hero"><div class="k-label">Total Giving · ${esc(rlabel)}</div><div class="k-val">${fmt(total)}</div><div class="k-sub">${G.length.toLocaleString()} gifts to ${new Set(G.map(g => g.o)).size} organizations${arcTot ? ' · plus Pre-Foundation giving' : ''}</div></div>
     <div class="card kpi"><div class="k-label">Main Giving Category</div><div class="k-val" style="font-size:26px;display:flex;align-items:center;gap:10px;min-height:42px">${catDot(main.c)}${esc(main.c)}</div><div class="k-sub">${fmt(main.a)} · ${pct(main.a, total)}% of giving</div></div>
     <div class="card kpi"><div class="k-label">Core Giving</div><div class="k-val">${fmt(sum(G.filter(g => g.g === 'Core'), g => g.a))}</div><div class="k-sub">${pct(sum(G.filter(g => g.g === 'Core'), g => g.a), total)}% of total</div></div>
     <div class="card kpi"><div class="k-label">The "Bucket" (Other Giving)</div><div class="k-val">${fmt(sum(G.filter(g => g.g === 'Other'), g => g.a))}</div><div class="k-sub">${pct(sum(G.filter(g => g.g === 'Other'), g => g.a), total)}% of total</div></div>
+    ${arcTot ? `<div class="card kpi"><div class="k-label">Pre-Foundation (${ARC[0].y} – ${ARC[ARC.length - 1].y})</div><div class="k-val">${fmt(arcTot)}</div><div class="k-sub">${pct(arcTot, total)}% of total · not categorized</div></div>` : ''}
   </div>
 
   <div class="card mt" id="annualCard"></div>
