@@ -30,6 +30,9 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmt = n => (n < 0 ? '-' : '') + '$' + Math.round(Math.abs(n || 0)).toLocaleString('en-US');
 const fmtZ = n => n ? fmt(n) : '<span class="zero">—</span>';
+const MON3 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const fmtD = (g, yr = true) => { const d = g.d || (g.m + '-01'); const s = MON3[+d.slice(5, 7) - 1] + ' ' + (+d.slice(8, 10)); return yr ? s + ', ' + d.slice(0, 4) : s; };
+const byRecent = (a, b) => (b.d || b.m).localeCompare(a.d || a.m) || b.a - a.a;
 const fmtK = n => {
   const a = Math.abs(n), s = n < 0 ? '-' : '';
   if (a >= 1e6) return s + '$' + (a / 1e6).toFixed(a >= 1e7 ? 1 : 2).replace(/\.?0+$/, '') + 'M';
@@ -88,7 +91,7 @@ $('#lockBtn').addEventListener('click', () => { LS.del('tlf_pp'); location.hash 
 /* =========================================================
    Data model
    ========================================================= */
-const S = { bTab: 'All', orgTab: 'Core', histRange: 'all', histMetric: 'amount', histCat: null, orgSearch: '', orgCat: '', orgGrp: '', orgSort: { k: 'total', d: -1 } };
+const S = { bTab: 'All', orgTab: 'Core', histRange: 'all', histMetric: 'amount', histCat: null, orgSearch: '', recentQ: '', histQ: '', orgCat: '', orgGrp: '', orgSort: { k: 'total', d: -1 } };
 let D = null;       // raw data
 let M = null;       // derived model
 
@@ -317,7 +320,7 @@ function renderFunds(el, rows, funds, remaining) {
     </table></div>
     <div class="note mt">${deferred.length
       ? `<b>Deferred to 2027:</b> ${deferred.map(r => `${esc(r.name)} ${fmt(r.deferred)}`).join(' · ')}. These are excluded from 2026 remaining to give and included in 2027. <a href="#/budget">Manage in the 2027 Budget →</a>`
-      : `<b>Timing notes:</b> The $1M gift to Children's Medical is anticipated soon. Gifts that slip to next year (for example Trinity Christian Academy) can be moved with <b>Move to 2027?</b> in the <a href="#/budget">2027 Budget</a> — they will then show here as deferred.`}</div>`;
+      : `<b>Timing notes:</b> Gifts that slip to next year (for example Trinity Christian Academy) can be moved with <b>Move to 2027?</b> in the <a href="#/budget">2027 Budget</a> — they will then show here as deferred.`}</div>`;
   bindTips(el);
 }
 
@@ -342,7 +345,28 @@ function renderDivisions(el, rows) {
           <div class="act" style="width:${d.act / max * 100}%;background:${CAT_COLOR[d.c]}"></div>
         </div>
       </div>`).join('')}
-    <div class="note mt" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><span><b>Total</b> · Target ${fmt(sum(div, d => d.tgt))}</span><span>Actual <b>${fmt(sum(div, d => d.act))}</b></span><span>Remaining <b>${fmt(sum(div, d => d.rem))}</b></span></div>`;
+    <div class="note mt" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><span><b>Total</b> · Target ${fmt(sum(div, d => d.tgt))}</span><span>Actual <b>${fmt(sum(div, d => d.act))}</b></span><span>Remaining <b>${fmt(sum(div, d => d.rem))}</b></span></div>
+    <div class="recent">
+      <div class="recent-head">
+        <div><h3 class="sec" style="font-size:18px">2026 Gifts</h3><div class="sec-sub" id="recentSub"></div></div>
+        <input class="input" id="recentQ" type="search" placeholder="Search organizations…" value="${esc(S.recentQ)}" aria-label="Search 2026 gifts by organization">
+      </div>
+      <div class="recent-box"><div class="recent-scroll"><table class="tbl recent-tbl">
+        <thead><tr><th>Date</th><th>Organization</th><th class="n">Amount</th></tr></thead>
+        <tbody id="recentBody"></tbody>
+      </table></div></div>
+    </div>`;
+  const all26 = D.gifts.filter(g => g.y === CY).sort(byRecent);
+  const drawRecent = () => {
+    const q = S.recentQ.trim().toLowerCase();
+    const L = q ? all26.filter(g => g.o.toLowerCase().includes(q)) : all26;
+    $('#recentSub', el).innerHTML = `${L.length} gift${L.length === 1 ? '' : 's'} · ${fmt(sum(L, g => g.a))}${q ? ' matching' : ''} · most recent first`;
+    $('#recentBody', el).innerHTML = L.map(g => `<tr class="click" data-org="${esc(g.o)}" title="${esc(g.n || '')}"><td class="dt">${fmtD(g, false)}</td><td class="org">${esc(g.o)}</td><td class="n">${fmt(g.a)}</td></tr>`).join('')
+      || `<tr><td colspan="3" class="empty">No 2026 gifts match “${esc(S.recentQ)}”.</td></tr>`;
+    $$('#recentBody tr[data-org]', el).forEach(tr => tr.addEventListener('click', () => openOrg(tr.dataset.org)));
+  };
+  $('#recentQ', el).addEventListener('input', e => { S.recentQ = e.target.value; drawRecent(); });
+  drawRecent();
   $$('[data-cat]', el).forEach(n => n.addEventListener('click', () => openCategory(n.dataset.cat, CY)));
   bindTips(el);
 }
@@ -526,6 +550,12 @@ function viewHistory(el) {
     ${arcTot ? `<div class="card kpi"><div class="k-label">Pre-Foundation (${ARC[0].y} – ${ARC[ARC.length - 1].y})</div><div class="k-val">${fmt(arcTot)}</div><div class="k-sub">${pct(arcTot, total)}% of total · not categorized</div></div>` : ''}
   </div>
 
+  <div class="card mt" id="histSearch">
+    <div class="sec-head"><div><h2 class="sec">Search Giving History</h2><div class="sec-sub" id="hsSub"></div></div>
+      <input class="input hs-input" id="histQ" type="search" placeholder="Search organizations…" value="${esc(S.histQ)}" aria-label="Search giving history by organization"></div>
+    <div id="hsBody"></div>
+  </div>
+
   <div class="card mt" id="annualCard"></div>
 
   <div class="card mt">
@@ -553,6 +583,28 @@ function viewHistory(el) {
   </div>`;
 
   $$('#rangeSeg button').forEach(b => b.addEventListener('click', () => { S.histRange = b.dataset.k; route(); }));
+  const drawHistSearch = () => {
+    const q = S.histQ.trim().toLowerCase();
+    const yl = y0 < 2009 ? 2009 : y0;
+    if (!q) {
+      $('#hsSub').innerHTML = `Type an organization name to list every gift · ${esc(yl === y1 ? String(y1) : yl + ' – ' + (y1 === CY ? 'YTD ' + y1 : y1))}`;
+      $('#hsBody').innerHTML = ''; return;
+    }
+    const L = G.filter(g => g.o.toLowerCase().includes(q)).sort(byRecent);
+    const orgs = [...new Set(L.map(g => g.o))];
+    $('#hsSub').innerHTML = L.length
+      ? `${L.length} gift${L.length === 1 ? '' : 's'} · ${fmt(sum(L, g => g.a))} · ${orgs.length} organization${orgs.length === 1 ? '' : 's'} · ${esc(fmtD(L[L.length - 1]))} – ${esc(fmtD(L[0]))}`
+      : `No gifts match “${esc(S.histQ)}” in ${esc(rlabel)}`;
+    if (!L.length) { $('#hsBody').innerHTML = ''; return; }
+    $('#hsBody').innerHTML = `
+      <div class="hs-scroll mt"><table class="tbl hs-tbl">
+        <thead><tr><th>Date</th><th>Organization</th><th>Category</th><th>Source Account</th><th class="n">Amount</th></tr></thead>
+        <tbody>${L.map(g => `<tr class="click" data-org="${esc(g.o)}" title="${esc(g.n || '')}"><td class="dt">${fmtD(g)}</td><td class="org">${esc(g.o)}</td><td>${catDot(g.c)}${esc(g.c)}</td><td>${esc(g.s)}</td><td class="n">${fmt(g.a)}</td></tr>`).join('')}</tbody>
+      </table></div>`;
+    $$('#hsBody tr[data-org]').forEach(tr => tr.addEventListener('click', () => openOrg(tr.dataset.org)));
+  };
+  $('#histQ').addEventListener('input', e => { S.histQ = e.target.value; drawHistSearch(); });
+  drawHistSearch();
   $$('#catCards .cat-card').forEach(c => c.addEventListener('click', () => { S.histCat = c.dataset.c; $$('#catCards .cat-card').forEach(x => x.classList.toggle('on', x === c)); drawCatDetail(); }));
 
   // Annual stacked by category
